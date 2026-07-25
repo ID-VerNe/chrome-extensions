@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- header bar -->
+  <header>
+    <div class="header-left">
+      <div class="brand-icon">
+        <img src="../icons/icon128.png" alt="StorageKit" width="20" height="20">
+      </div>
+      <span class="brand-name">StorageKit</span>
+    </div>
+    <div class="domain-badge" id="domain-badge">—</div>
+  </header>
+
+  <!-- attention: storage overview -->
+  <section class="section">
+    <div class="overview-grid">
+      <div class="overview-card" data-type="local">
+        <div class="overview-top">
+          <span class="overview-label">localStorage</span>
+          <span class="overview-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </span>
+        </div>
+        <div class="overview-value" id="ls-count">—</div>
+        <div class="overview-sub" id="ls-size">0 B</div>
+      </div>
+      <div class="overview-card" data-type="session">
+        <div class="overview-top">
+          <span class="overview-label">sessionStorage</span>
+          <span class="overview-icon">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </span>
+        </div>
+        <div class="overview-value" id="ss-count">—</div>
+        <div class="overview-sub" id="ss-size">0 B</div>
+      </div>
+    </div>
+    <button id="refresh-btn" class="text-link">Refresh data</button>
+
+    <!-- key list -->
+    <div class="key-section">
+      <div class="key-header">
+        <span class="key-header-label">Keys</span>
+        <span class="key-header-count" id="key-count">0</span>
+      </div>
+      <ul id="key-list-content" class="key-list"></ul>
+    </div>
+  </section>
+
+  <!-- interest: export -->
+  <section class="section">
+    <div class="section-heading">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="7 10 12 15 17 10"/>
+        <line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      <span>Export</span>
+    </div>
+    <div class="action-grid">
+      <button id="export-ls-btn" class="action-card">
+        <div class="action-card-top">
+          <span class="action-card-label">localStorage</span>
+          <span class="action-card-arrow">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </span>
+        </div>
+        <div class="action-card-hint">JSON file</div>
+      </button>
+      <button id="export-ss-btn" class="action-card">
+        <div class="action-card-top">
+          <span class="action-card-label">sessionStorage</span>
+          <span class="action-card-arrow">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </span>
+        </div>
+        <div class="action-card-hint">JSON file</div>
+      </button>
+    </div>
+  </section>
+
+  <!-- desire + action: import -->
+  <section class="section">
+    <div class="section-heading">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <span>Import</span>
+    </div>
+    <input type="file" id="file-input" accept=".json" hidden>
+    <button id="import-btn" class="dropzone">
+      <div class="dropzone-icon">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <div class="dropzone-text">Choose a JSON file</div>
+      <div class="dropzone-hint">.json exported from StorageKit</div>
+    </button>
+
+    <!-- import preview -->
+    <div id="import-preview" class="import-preview hidden">
+      <div class="divider"></div>
+
+      <div class="file-meta">
+        <div class="file-meta-row">
+          <span class="file-meta-label">Source</span>
+          <span class="file-meta-value" id="import-domain">—</span>
+        </div>
+        <div class="file-meta-row">
+          <span class="file-meta-label">Exported</span>
+          <span class="file-meta-value" id="import-time">—</span>
+        </div>
+      </div>
+
+      <div class="file-stats">
+        <div class="file-stat">
+          <span class="file-stat-value" id="import-ls-count">0</span>
+          <span class="file-stat-label">localStorage</span>
+        </div>
+        <div class="file-stat-divider"></div>
+        <div class="file-stat">
+          <span class="file-stat-value" id="import-ss-count">0</span>
+          <span class="file-stat-label">sessionStorage</span>
+        </div>
+      </div>
+
+      <div class="strategy-group">
+        <span class="strategy-group-label">Strategy</span>
+        <label class="strategy-option" data-checked>
+          <input type="radio" name="strategy" value="replace" checked>
+          <div class="strategy-radio">
+            <div class="strategy-radio-dot"></div>
+          </div>
+          <div class="strategy-content">
+            <span class="strategy-title">Replace</span>
+            <span class="strategy-desc">Clear existing data before writing</span>
+          </div>
+        </label>
+        <label class="strategy-option">
+          <input type="radio" name="strategy" value="merge">
+          <div class="strategy-radio"></div>
+          <div class="strategy-content">
+            <span class="strategy-title">Merge</span>
+            <span class="strategy-desc">Keep existing keys, overwrite matches</span>
+          </div>
+        </label>
+      </div>
+
+      <button id="confirm-import-btn" class="btn-primary">
+        <span>Import data</span>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 1 21 5 17 9"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <polyline points="7 23 3 19 7 15"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

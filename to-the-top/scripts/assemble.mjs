@@ -1,0 +1,235 @@
+/**
+ * assemble.mjs — Build script for Vite + Manifest V3 Chrome extension.
+ *
+ * Steps:
+ *   1. Build JS bundles with Vite (content script + background + options)
+ *   2. Copy static assets (icons, options HTML)
+ *   3. Generate final manifest.json with correct file references
+ */
+
+import { build } from 'vite'
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { resolve, dirname } from 'path'
+import { fileURLToPath } from 'url'
+
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const ROOT = resolve(__dirname, '..')
+const SRC = resolve(ROOT, 'src')
+const DIST = resolve(ROOT, 'dist')
+
+async function main() {
+  const srcManifest = JSON.parse(readFileSync(resolve(ROOT, 'manifest.json'), 'utf-8'))
+
+  // 1. Build JS bundles
+  await build({
+    root: ROOT,
+    configFile: false,
+    build: {
+      outDir: DIST,
+      emptyOutDir: true,
+      sourcemap: true,
+      minify: true,
+      rollupOptions: {
+        input: {
+          content: resolve(SRC, 'content-script/main.ts'),
+          background: resolve(SRC, 'background/background.ts'),
+          options: resolve(SRC, 'options/options.ts'),
+        },
+        output: {
+          entryFileNames: 'js/[name].js',
+          chunkFileNames: 'js/[name]-[hash].js',
+          assetFileNames: 'assets/[name][extname]',
+        },
+      },
+    },
+    logLevel: 'warn',
+  })
+
+  console.log('✓ JS bundles built')
+
+  // 2. Copy static assets
+  mkdirSync(resolve(DIST, 'assets'), { recursive: true })
+
+  for (const size of ['16', '48', '128']) {
+    copyFileSync(
+      resolve(SRC, `assets/icon-${size}.svg`),
+      resolve(DIST, `assets/icon-${size}.svg`),
+    )
+  }
+  console.log('✓ icons copied')
+
+  // 3. Options page HTML (inline the options bundle)
+  const optionsHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Smart Back to Top — Options</title>
+  <style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#f8f9fa;--surface:#fff;--text:#1a1a2e;--text-secondary:#5a5a7a;--border:#e0e0e8;--primary:#1a73e8;--primary-light:#e8f0fe;--radius:10px;--shadow:0 1px 3px rgba(0,0,0,.08)}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;background:var(--bg);color:var(--text);padding:32px;line-height:1.5}
+.container{max-width:640px;margin:0 auto}
+h1{font-size:22px;font-weight:600;margin-bottom:24px;display:flex;align-items:center;gap:10px}
+h1 svg{width:28px;height:28px}
+.card{background:var(--surface);border-radius:var(--radius);box-shadow:var(--shadow);padding:20px 24px;margin-bottom:16px}
+.card-title{font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-secondary);margin-bottom:16px}
+.field{display:flex;justify-content:space-between;align-items:center;padding:8px 0}
+.field+.field{border-top:1px solid var(--border)}
+.field-label{font-size:14px}
+.field-desc{font-size:12px;color:var(--text-secondary);margin-top:2px}
+.toggle{position:relative;width:44px;height:24px;cursor:pointer;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;inset:0;background:#ccc;border-radius:12px;transition:background .2s}
+.toggle-slider::after{content:'';position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s}
+.toggle input:checked+.toggle-slider{background:var(--primary)}
+.toggle input:checked+.toggle-slider::after{transform:translateX(20px)}
+select,input[type=text]{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:13px;background:#fff;color:var(--text);min-width:140px}
+.range-value{font-size:14px;font-weight:600;min-width:32px;text-align:right}
+.tag-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.tag{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;background:#f0f0f5;border-radius:16px;font-size:12px}
+.tag-remove{cursor:pointer;color:#999;font-size:14px;line-height:1}
+.tag-remove:hover{color:#e74c3c}
+.tag-input-wrap{display:flex;gap:6px;margin-top:8px}
+.tag-input-wrap input{flex:1}
+.tag-input-wrap button{padding:6px 14px;border:none;border-radius:6px;background:var(--primary);color:#fff;font-size:13px;cursor:pointer}
+.tag-input-wrap button:hover{opacity:.9}
+.footer{text-align:center;color:var(--text-secondary);font-size:12px;margin-top:24px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20V5"/>
+        <path d="M5 12L12 5L19 12"/>
+      </svg>
+      Smart Back to Top
+    </h1>
+    <div class="card">
+      <div class="card-title">启用</div>
+      <div class="field">
+        <div>
+          <div class="field-label">启用插件</div>
+          <div class="field-desc">全局开关</div>
+        </div>
+        <label class="toggle">
+          <input type="checkbox" id="enabled" checked />
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">外观</div>
+      <div class="field">
+        <div>
+          <div class="field-label">主题模式</div>
+          <div class="field-desc">自动适配 / 强制亮色 / 强制暗色</div>
+        </div>
+        <select id="themeMode">
+          <option value="auto">自动适配</option>
+          <option value="light">始终亮色</option>
+          <option value="dark">始终暗色</option>
+        </select>
+      </div>
+      <div class="field">
+        <div>
+          <div class="field-label">图标样式</div>
+        </div>
+        <select id="iconStyle">
+          <option value="arrow-up">↑ 箭头</option>
+          <option value="chevron-up">▲ 三角</option>
+          <option value="circle-arrow">○ 圆形箭头</option>
+          <option value="rounded-arrow">▭ 圆角箭头</option>
+        </select>
+      </div>
+      <div class="field">
+        <div>
+          <div class="field-label">不透明度</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="range" id="opacity" min="20" max="100" value="80" style="width:100px" />
+          <span class="range-value" id="opacityValue">80%</span>
+        </div>
+      </div>
+      <div class="field">
+        <div>
+          <div class="field-label">按钮颜色</div>
+          <div class="field-desc">留空则自动提取页面主色</div>
+        </div>
+        <input type="text" id="primaryColor" placeholder="auto (#1a73e8)" style="min-width:140px" />
+      </div>
+      <div class="field">
+        <div>
+          <div class="field-label">注入模式</div>
+        </div>
+        <select id="injectionMode">
+          <option value="auto">自动（工具栏优先）</option>
+          <option value="floating">仅悬浮</option>
+          <option value="toolbar">仅工具栏</option>
+        </select>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">禁用网站</div>
+      <div class="field">
+        <div>
+          <div class="field-label">在此列表中的网站不会显示按钮</div>
+          <div class="field-desc">支持通配符，如 *.example.com</div>
+        </div>
+      </div>
+      <div class="tag-list" id="disabledSitesList"></div>
+      <div class="tag-input-wrap">
+        <input type="text" id="newSiteInput" placeholder="example.com" />
+        <button id="addSiteBtn">添加</button>
+      </div>
+    </div>
+    <div class="footer">Smart Back to Top v0.1.0</div>
+  </div>
+  <script src="js/options.js"></script>
+</body>
+</html>`
+  writeFileSync(resolve(DIST, 'options.html'), optionsHtml)
+  console.log('✓ options.html written')
+
+  // 4. Generate final manifest.json
+  const manifest = {
+    manifest_version: 3,
+    name: srcManifest.name,
+    version: srcManifest.version,
+    description: srcManifest.description,
+    icons: {
+      '16': 'assets/icon-16.svg',
+      '48': 'assets/icon-48.svg',
+      '128': 'assets/icon-128.svg',
+    },
+    action: {
+      default_title: srcManifest.name,
+      default_icon: {
+        '16': 'assets/icon-16.svg',
+        '48': 'assets/icon-48.svg',
+        '128': 'assets/icon-128.svg',
+      },
+    },
+    content_scripts: [
+      {
+        matches: ['<all_urls>'],
+        js: ['js/content.js'],
+        run_at: 'document_end',
+      },
+    ],
+    background: {
+      service_worker: 'js/background.js',
+      type: 'module',
+    },
+    options_page: 'options.html',
+    permissions: ['storage', 'activeTab'],
+    host_permissions: ['<all_urls>'],
+  }
+
+  writeFileSync(resolve(DIST, 'manifest.json'), JSON.stringify(manifest, null, 2))
+  console.log('✓ manifest.json written')
+  console.log('\n✅ Build complete! Load dist/ in Chrome Extensions page.')
+}
+
+main().catch(e => { console.error('Build failed:', e); process.exit(1) })

@@ -1,0 +1,224 @@
+/**
+ * Scroll-to-top animation and button visibility controller.
+ *
+ * Responsibilities:
+ *   - Smooth scroll to top on click
+ *   - Button fade-in/fade-out based on scroll position
+ *   - Button hover/click animation effects
+ */
+
+/**
+ * Smoothly scroll the page to the top with a customizable animation.
+ */
+export function scrollToTop(): void {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth',
+  })
+}
+
+/**
+ * Remove the unused sbt-float-up keyframe (was for old click behavior).
+ */
+function createButtonClickAnimation(): HTMLStyleElement {
+  const style = document.createElement('style')
+  style.textContent = `
+    @keyframes sbt-press {
+      0% { transform: scale(1); }
+      40% { transform: scale(0.85); }
+      70% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    @keyframes sbt-fade-in {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes sbt-fade-out {
+      from { opacity: 1; transform: translateY(0); }
+      to { opacity: 0; transform: translateY(10px); }
+    }
+  `
+  return style
+}
+
+/**
+ * Play the "press" animation when button is clicked.
+ */
+function animatePress(btn: HTMLElement): void {
+  btn.style.animation = 'sbt-press 0.4s ease'
+  btn.addEventListener(
+    'animationend',
+    () => {
+      btn.style.animation = ''
+    },
+    { once: true },
+  )
+}
+
+/**
+ * Setup intersection tracking for the top of the page.
+ * When the top anchor is visible → hide button.
+ * Otherwise → show button.
+ *
+ * Optionally accepts a recheck function: right before showing the button,
+ * call recheck(). If it returns true, the button is removed and the
+ * visibility controller disconnects itself (defers to native button).
+ */
+export function setupScrollVisibility(
+  button: HTMLElement,
+  options?: {
+    scrollThreshold?: number
+    onBeforeShow?: () => boolean | Promise<boolean> // return true = native found, abort
+    onAbort?: () => void // called when aborted due to native detection
+  },
+): { disconnect: () => void; hideUntilManualScroll: () => void } {
+  const threshold = options?.scrollThreshold ?? window.innerHeight * 1.5
+
+  // Inject animation keyframes
+  document.head.appendChild(createButtonClickAnimation())
+
+  let visible = false
+  let disconnected = false
+  // Lock mechanism: when the user clicks to scroll to top, prevent the button
+  // from reappearing during the smooth-scroll journey.
+  let lockUntilThresholdCycle = false
+  // Tracks whether the user has scrolled ABOVE the threshold at least once
+  // since the lock was set. Only then can the lock be released.
+  let hasBeenAboveThresholdSinceLock = false
+  // Guards against concurrent onBeforeShow promises during rapid scrolling
+  let detectionInflight = false
+
+  const onScroll = () => {
+    if (disconnected) return
+
+    const nowPast = window.scrollY > threshold
+
+    // If we're above the threshold (scrolled up), mark the crossing
+    if (!nowPast) {
+      hasBeenAboveThresholdSinceLock = true
+    }
+
+    const shouldShow = nowPast
+
+    if (shouldShow && !visible) {
+      // If locked and user hasn't scrolled above threshold since lock,
+      // keep hidden
+      if (lockUntilThresholdCycle && !hasBeenAboveThresholdSinceLock) {
+        return
+      }
+      // Lock satisfied — clear it
+      lockUntilThresholdCycle = false
+
+      // 🔁 Re-check for native button before showing ours
+      if (options?.onBeforeShow) {
+        // Guard: skip if a detection is already in-flight
+        const result = options.onBeforeShow()
+        if (result instanceof Promise) {
+          if (detectionInflight) return
+          detectionInflight = true
+          result.then((nativeFound) => {
+            detectionInflight = false
+            if (nativeFound) {
+              if (!disconnected) {
+                disconnected = true
+                options.onAbort?.()
+              }
+            } else {
+              showButton()
+            }
+          })
+          return
+        } else if (result) {
+          if (!disconnected) {
+            disconnected = true
+            options.onAbort?.()
+          }
+          return
+        }
+      }
+      showButton()
+    } else if (!shouldShow && visible) {
+      hideButton()
+    }
+  }
+
+  function showButton(): void {
+    if (disconnected) return
+    visible = true
+    button.classList.add('sbt-visible')
+    button.style.animation = 'sbt-fade-in 0.3s ease forwards'
+    button.style.pointerEvents = 'auto'
+  }
+
+  function hideButton(): void {
+    visible = false
+    button.style.animation = 'sbt-fade-out 0.2s ease forwards'
+    button.style.pointerEvents = 'none'
+  }
+
+  // Set initial state
+  button.style.opacity = '0'
+  button.style.pointerEvents = 'none'
+
+  // Throttled scroll listener
+  let ticking = false
+  const throttledScroll = () => {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        onScroll()
+        ticking = false
+      })
+      ticking = true
+    }
+  }
+
+  window.addEventListener('scroll', throttledScroll, { passive: true })
+
+  // Run once on init
+  onScroll()
+
+  return {
+    disconnect: () => {
+      disconnected = true
+      window.removeEventListener('scroll', throttledScroll)
+    },
+    /**
+     * Lock the button from showing again until the user manually scrolls
+     * back past the threshold. Call this when the user clicks to top.
+     */
+    hideUntilManualScroll: () => {
+      visible = false
+      lockUntilThresholdCycle = true
+      hasBeenAboveThresholdSinceLock = false
+      button.style.opacity = '0'
+      button.style.pointerEvents = 'none'
+      button.style.animation = 'none'
+    },
+  }
+}
+
+/**
+ * Attach click handler: animate, then scroll to top.
+ *
+ * The scroll visibility controller (setupScrollVisibility) is the single source
+ * of truth for show/hide. Click just triggers the press animation + smooth scroll,
+ * then notifies the visibility controller to lock.
+ */
+export function attachClickHandler(
+  button: HTMLElement,
+  onHide?: () => void,
+): () => void {
+  const onClick = (e: MouseEvent) => {
+    e.preventDefault()
+    animatePress(button)
+    // Immediately hide and lock until user manually rescrolls
+    onHide?.()
+    scrollToTop()
+  }
+
+  button.addEventListener('click', onClick)
+
+  return () => {
+    button.removeEventListener('click', onClick)
+  }
+}

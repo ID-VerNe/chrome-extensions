@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Extension Manager Pro",
+  "version": "1.0.0",
+  "description": "一个可以快速查看、启用/禁用和管理所有Chrome扩展的工具。",
+  "permissions": [
+    "management",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "interface/popup.html",
+    "default_icon": {
+      "16": "interface/icons/icon_16.png",
+      "48": "interface/icons/icon_48.png",
+      "128": "interface/icons/icon_128.png"
+    }
+  },
+  "icons": {
+    "16": "interface/icons/icon_16.png",
+    "48": "interface/icons/icon_48.png",
+    "128": "interface/icons/icon_128.png"
+  }
+}

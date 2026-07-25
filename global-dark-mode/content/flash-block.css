@@ -1,0 +1,9 @@
+/* 预注入 CSS：在页面渲染之前就把背景设为深色，防止白闪。
+   在 manifest 中以此文件作为 content_scripts 以 document_start 注入。
+   darkreader 接管后，这些规则会被覆盖。 */
+html {
+  background-color: #241d18 !important;
+}
+body {
+  background-color: #241d18 !important;
+}

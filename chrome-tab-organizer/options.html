@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrome Tab Organizer 设置</title>
+    <link rel="stylesheet" href="options.css">
+</head>
+<body>
+    <div class="container">
+        <h1>Chrome Tab Organizer 设置</h1>
+
+        <section class="settings-section">
+            <h2>分类类型</h2>
+            <div class="form-group">
+                <label for="classificationType">选择分类依据:</label>
+                <select id="classificationType">
+                    <option value="hostname">Hostname (例如: google.com)</option>
+                    <option value="tld">TLD (例如: .com, .org)</option>
+                </select>
+            </div>
+        </section>
+
+        <section class="settings-section">
+            <h2>自定义分组规则</h2>
+            <p>匹配到以下 URL 模式的标签页将被归到指定的自定义分组窗口。优先级最高。</p>
+            <div id="customGroupsList" class="rules-list">
+                <!-- Custom group items will be injected here by options.js -->
+            </div>
+            <div class="form-group add-rule-group">
+                <input type="text" id="newCustomGroupPattern" placeholder="URL 模式 (支持 *)">
+                <input type="text" id="newCustomGroupName" placeholder="分组名称">
+                <button id="addCustomGroup">+</button>
+            </div>
+        </section>
+
+        <section class="settings-section">
+            <h2>黑名单规则</h2>
+            <p>匹配到以下 URL 模式的标签页将不被分类，保留在原窗口。优先级次于自定义分组。</p>
+            <div id="blacklistList" class="rules-list">
+                <!-- Blacklist items will be injected here by options.js -->
+            </div>
+            <div class="form-group add-rule-group">
+                <input type="text" id="newBlacklistPattern" placeholder="URL 模式 (支持 *)">
+                <button id="addBlacklist">+</button>
+            </div>
+        </section>
+
+        <button id="saveSettings" class="save-button">保存设置</button>
+        <div id="statusMessage" class="status-message"></div>
+    </div>
+
+    <script type="module" src="options.js"></script>
+</body>
+</html>

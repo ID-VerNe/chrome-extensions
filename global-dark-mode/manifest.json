@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "Global Dark Mode",
+  "version": "0.1.0",
+  "description": "全局夜间模式：默认对所有网站开启智能暗色，可按站点关闭。",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": {
+    "service_worker": "background/sw.js"
+  },
+  "action": {
+    "default_title": "Global Dark Mode",
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_ui": {
+    "page": "options/options.html",
+    "open_in_view_tab": false
+  },
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "css": ["content/flash-block.css"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/inject.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

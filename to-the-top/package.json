@@ -1,0 +1,16 @@
+{
+  "name": "smart-back-to-top",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A smart Chrome extension that adds a context-aware back-to-top button that blends into any page",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/assemble.mjs",
+    "lint": "tsc --noEmit --pretty"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.300",
+    "typescript": "~5.9.3",
+    "vite": "~6.4.3"
+  }
+}

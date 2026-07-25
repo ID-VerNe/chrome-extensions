@@ -1,0 +1,146 @@
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background-color: #f4f7f6;
+    color: #333;
+}
+
+.container {
+    max-width: 800px;
+    margin: 20px auto;
+    background-color: #fff;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+h1 {
+    color: #2c3e50;
+    text-align: center;
+    margin-bottom: 30px;
+    font-size: 28px;
+}
+
+h2 {
+    color: #34495e;
+    border-bottom: 2px solid #e0e0e0;
+    padding-bottom: 10px;
+    margin-top: 30px;
+    margin-bottom: 20px;
+    font-size: 22px;
+}
+
+.settings-section p {
+    font-size: 14px;
+    color: #666;
+    margin-bottom: 15px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.form-group label {
+    flex-shrink: 0;
+    margin-right: 10px;
+    font-weight: bold;
+    color: #555;
+}
+
+.form-group select,
+.form-group input[type="text"] {
+    flex-grow: 1;
+    padding: 10px 12px;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 16px;
+    box-sizing: border-box;
+}
+
+.form-group input[type="text"]:focus,
+.form-group select:focus {
+    border-color: #007bff;
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25);
+}
+
+button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    background-color: #007bff;
+    color: white;
+    font-size: 16px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+.save-button {
+    display: block;
+    width: 100%;
+    margin-top: 30px;
+    padding: 12px 20px;
+    font-size: 18px;
+    background-color: #28a745;
+}
+
+.save-button:hover {
+    background-color: #218838;
+}
+
+.rules-list {
+    border: 1px solid #e0e0e0;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 20px;
+    background-color: #fdfdfd;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+.rule-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px dashed #eee;
+}
+
+.rule-item:last-child {
+    border-bottom: none;
+}
+
+.rule-item span {
+    flex-grow: 1;
+    margin-right: 10px;
+    word-break: break-all;
+}
+
+.rule-item .remove-button {
+    background-color: #dc3545;
+    padding: 5px 10px;
+    font-size: 14px;
+}
+
+.rule-item .remove-button:hover {
+    background-color: #c82333;
+}
+
+.add-rule-group {
+    margin-top: 10px;
+}
+
+.status-message {
+    text-align: center;
+    margin-top: 20px;
+    font-weight: bold;
+    color: #28a745;
+}

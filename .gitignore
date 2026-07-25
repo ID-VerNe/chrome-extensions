@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.plan/
+.plan/
+.gemini_backups/
+.gemini-clipboard/
+project.md
+README.md
+package-lock.json

@@ -1,0 +1,18 @@
+{
+  "name": "global-dark-mode",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Chrome 全局夜间模式扩展：默认对所有网站开启智能暗色，可按站点关闭。",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "icons": "node scripts/build.mjs --icons-only"
+  },
+  "dependencies": {
+    "darkreader": "^4.9.128"
+  },
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "sharp": "^0.35.3"
+  }
+}

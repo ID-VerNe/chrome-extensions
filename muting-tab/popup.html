@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="search-row">
+        <input type="text" id="searchInput" placeholder="搜索域名或标签...">
+        <button id="clearRulesBtn" title="清空所有规则">🧹</button>
+      </div>
+    </div>
+    <div id="domainList" class="list">
+      <!-- Domain items will be injected here -->
+    </div>
+  </div>
+  <script src="psl.min.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

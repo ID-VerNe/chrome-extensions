@@ -1,0 +1,33 @@
+{
+  "manifest_version": 3,
+  "name": "Smart Back to Top",
+  "version": "0.1.0",
+  "description": "A smart back-to-top button that blends into any webpage",
+  "icons": {
+    "16": "src/assets/icon-16.svg",
+    "48": "src/assets/icon-48.svg",
+    "128": "src/assets/icon-128.svg"
+  },
+  "action": {
+    "default_title": "Smart Back to Top",
+    "default_icon": {
+      "16": "src/assets/icon-16.svg",
+      "48": "src/assets/icon-48.svg",
+      "128": "src/assets/icon-128.svg"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/content-script/main.ts"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "src/background/background.ts",
+    "type": "module"
+  },
+  "options_page": "src/options/index.html",
+  "permissions": ["storage", "activeTab"],
+  "host_permissions": ["<all_urls>"]
+}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Dark Mode</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>全局夜间模式</h1>
+    <label class="switch">
+      <input type="checkbox" id="toggle">
+      <span class="slider"></span>
+    </label>
+  </header>
+
+  <p id="status-text" class="status"></p>
+
+  <section class="adjust">
+    <label class="field">
+      <span>亮度</span>
+      <input type="range" id="brightness" min="50" max="150" step="1">
+      <em id="brightness-val">100</em>
+    </label>
+    <label class="field">
+      <span>对比度</span>
+      <input type="range" id="contrast" min="50" max="150" step="1">
+      <em id="contrast-val">100</em>
+    </label>
+    <label class="field">
+      <span>色温</span>
+      <input type="range" id="sepia" min="0" max="100" step="1">
+      <em id="sepia-val">0</em>
+    </label>
+  </section>
+
+  <hr>
+
+  <section class="site">
+    <div class="site-row">
+      <span id="site-label" class="site-label">加载中…</span>
+      <label class="switch small">
+        <input type="checkbox" id="site-toggle">
+        <span class="slider"></span>
+      </label>
+    </div>
+    <p class="hint">勾选 = 对当前站点启用夜间模式</p>
+  </section>
+
+  <button id="open-options" class="link-btn">高级设置 →</button>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
