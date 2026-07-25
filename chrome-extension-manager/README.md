@@ -184,10 +184,8 @@ async handleToggle(event, id, itemElement) {
 
 **约束**：只有已固定的扩展项才可拖拽（`draggable = true`），且只能拖拽到其他固定项的位置上。`handleDragOver` 中通过检查 `targetId` 是否在 `this.pinnedExtensions` 数组中来确保这一点。
 
-### 已知问题
-
-- `popup.html` 第 48 行的 `<script>` 标签中 `src` 路径为 `../application/main.js`，但实际 `main.js` 位于扩展根目录。正确的路径应为 `../main.js`。当前配置下该模块将无法加载，修正后方可正常启动。
-
 ---
+
+*此 README 基于源码 v1.0.0 撰写。*
 
 *此 README 基于源码 v1.0.0 撰写。*
