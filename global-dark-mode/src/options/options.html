@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Dark Mode — 设置</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>全局夜间模式</h1>
+      <label class="switch">
+        <input type="checkbox" id="toggle">
+        <span class="slider"></span>
+      </label>
+    </header>
+
+    <section>
+      <h2>调节参数</h2>
+      <div class="field">
+        <label>亮度 <em id="brightness-val">100</em></label>
+        <input type="range" id="brightness" min="50" max="150" step="1">
+      </div>
+      <div class="field">
+        <label>对比度 <em id="contrast-val">100</em></label>
+        <input type="range" id="contrast" min="50" max="150" step="1">
+      </div>
+      <div class="field">
+        <label>色温 <em id="sepia-val">0</em></label>
+        <input type="range" id="sepia" min="0" max="100" step="1">
+      </div>
+      <div class="field inline">
+        <label>背景色 <input type="color" id="dark-bg" value="#241d18"></label>
+        <label>文本色 <input type="color" id="dark-text" value="#e8e0d6"></label>
+      </div>
+      <button id="reset" class="btn">重置为默认值</button>
+    </section>
+
+    <section>
+      <h2>站点关闭名单</h2>
+      <p class="desc">已开启夜间模式的网站，如需关闭该网站，请将其加入以下名单。</p>
+      <div class="add-row">
+        <input type="text" id="site-input" placeholder="输入站点域名，如 example.com">
+        <button id="add-site" class="btn primary">添加</button>
+      </div>
+      <p id="no-sites" class="muted">暂无站点被关闭</p>
+      <ul id="site-list"></ul>
+    </section>
+  </div>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

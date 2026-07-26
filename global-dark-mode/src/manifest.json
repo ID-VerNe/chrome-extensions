@@ -3,13 +3,8 @@
   "name": "Global Dark Mode",
   "version": "0.1.0",
   "description": "全局夜间模式：默认对所有网站开启智能暗色，可按站点关闭。",
-  "permissions": [
-    "storage",
-    "tabs"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background/sw.js"
   },
@@ -33,22 +28,14 @@
   },
   "content_scripts": [
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "css": [
-        "content/flash-block.css"
-      ],
+      "matches": ["<all_urls>"],
+      "css": ["content/flash-block.css"],
       "run_at": "document_start",
       "all_frames": true
     },
     {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content/inject.js"
-      ],
+      "matches": ["<all_urls>"],
+      "js": ["content/inject.js"],
       "run_at": "document_idle",
       "all_frames": true
     }

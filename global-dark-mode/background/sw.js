@@ -1,49 +1,56 @@
-// Background Service Worker — 全局状态管理 + 跨域 fetch 代理。
-// 存储变化通过 chrome.storage.onChanged 广播到所有活跃标签页。
+// src/shared/constants.js
+var STORAGE = Object.freeze({
+  STATE: "gdm_state",
+  // {enabled, brightness, contrast, sepia, darkBg, darkText}
+  SITES: "gdm_disabled_sites"
+  // string[] 站点 origin 关闭名单
+});
+var MSG = Object.freeze({
+  FETCH: "gdm_fetch"
+  // 内容脚本 -> background：代取跨域 CSS
+});
+var DEFAULTS = Object.freeze({
+  enabled: true,
+  brightness: 90,
+  contrast: 90,
+  sepia: 30,
+  darkBg: "#241d18",
+  darkText: "#e8e0d6"
+});
+var RANGES = Object.freeze({
+  brightness: { min: 50, max: 150, step: 1 },
+  contrast: { min: 50, max: 150, step: 1 },
+  sepia: { min: 0, max: 100, step: 1 }
+});
 
-import { STORAGE, MSG, DEFAULTS } from '../shared/constants.js';
-
-// ---- 安装 / 更新 ----
+// src/background/sw.js
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  if (reason === 'install') {
+  if (reason === "install") {
     await chrome.storage.sync.set({
       [STORAGE.STATE]: { ...DEFAULTS },
-      [STORAGE.SITES]: [],
+      [STORAGE.SITES]: []
     });
   }
 });
-
-// ---- 存储变更广播到所有标签页 ----
 chrome.storage.onChanged.addListener(async (changes, area) => {
-  if (area !== 'sync') return;
-
+  if (area !== "sync") return;
   if (changes[STORAGE.STATE] || changes[STORAGE.SITES]) {
-    const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
-    const state = changes[STORAGE.STATE]
-      ? changes[STORAGE.STATE].newValue
-      : (await chrome.storage.sync.get(STORAGE.STATE))[STORAGE.STATE] || DEFAULTS;
-    const sites = changes[STORAGE.SITES]
-      ? changes[STORAGE.SITES].newValue
-      : (await chrome.storage.sync.get(STORAGE.SITES))[STORAGE.SITES] || [];
-
+    const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+    const state = changes[STORAGE.STATE] ? changes[STORAGE.STATE].newValue : (await chrome.storage.sync.get(STORAGE.STATE))[STORAGE.STATE] || DEFAULTS;
+    const sites = changes[STORAGE.SITES] ? changes[STORAGE.SITES].newValue : (await chrome.storage.sync.get(STORAGE.SITES))[STORAGE.SITES] || [];
     for (const tab of tabs) {
-      chrome.tabs.sendMessage(tab.id, { type: 'gdm_update', state, sites }).catch(() => {
-        // 内容脚本未就绪，忽略
+      chrome.tabs.sendMessage(tab.id, { type: "gdm_update", state, sites }).catch(() => {
       });
     }
   }
 });
-
-// ---- 跨域 CSS 代理（内容脚本 fetch 受限） ----
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === MSG.FETCH) {
-    fetch(msg.url, { credentials: 'omit' })
-      .then((r) => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.text();
-      })
-      .then((text) => sendResponse({ ok: true, text }))
-      .catch((err) => sendResponse({ ok: false, error: err.message }));
-    return true; // 保持通道打开
+    fetch(msg.url, { credentials: "omit" }).then((r) => {
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      return r.text();
+    }).then((text) => sendResponse({ ok: true, text })).catch((err) => sendResponse({ ok: false, error: err.message }));
+    return true;
   }
 });
+//# sourceMappingURL=sw.js.map
