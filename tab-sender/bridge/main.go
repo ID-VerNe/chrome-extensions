@@ -71,10 +71,20 @@ type closeTabData struct {
 	TabID  int    `json:"tabId"`
 }
 
-// bridge holds registered clients keyed by browser name.
+// bridge holds registered clients keyed by browser name, plus relay counters
+// surfaced via /health so you can tell at a glance whether messages flow.
 type bridge struct {
 	mu      sync.RWMutex
 	clients map[string]*websocket.Conn // browser -> conn
+
+	// relay counters (all under mu)
+	countRegister   map[string]int // per browser, number of (re)connections
+	countTabsUpdate int
+	countOpenURL    int
+	countCloseTab   int
+	countOpenReq    int
+	countCloseReq   int
+	lastActivity    time.Time
 }
 
 var upgrader = websocket.Upgrader{
@@ -85,8 +95,13 @@ var upgrader = websocket.Upgrader{
 }
 
 func newBridge() *bridge {
-	return &bridge{clients: make(map[string]*websocket.Conn)}
+	return &bridge{
+		clients:       make(map[string]*websocket.Conn),
+		countRegister: make(map[string]int),
+	}
 }
+
+func (b *bridge) touch() { b.lastActivity = time.Now() }
 
 // store registers a client under its browser name, replacing any prior conn.
 func (b *bridge) store(name string, c *websocket.Conn) {
@@ -96,6 +111,10 @@ func (b *bridge) store(name string, c *websocket.Conn) {
 		_ = old.Close()
 	}
 	b.clients[name] = c
+	b.countRegister[name]++
+	b.touch()
+	log.Printf("[bridge] client registered browser=%s total_reg=%d now_connected=%d",
+		name, b.countRegister[name], len(b.clients))
 }
 
 func (b *bridge) drop(name string, c *websocket.Conn) {
@@ -103,6 +122,7 @@ func (b *bridge) drop(name string, c *websocket.Conn) {
 	defer b.mu.Unlock()
 	if cur, ok := b.clients[name]; ok && cur == c {
 		delete(b.clients, name)
+		log.Printf("[bridge] client dropped browser=%s now_connected=%d", name, len(b.clients))
 	}
 }
 
@@ -168,8 +188,19 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok":      true,
-			"clients": clients,
+			"ok":          true,
+			"clients":     clients,
+			"connected":   len(clients),
+			"counts": map[string]int{
+				"tabs-update": br.countTabsUpdate,
+				"open-url":    br.countOpenURL,
+				"close-tab":   br.countCloseTab,
+				"open-tab":    br.countOpenReq,
+				"close-tab-remote": br.countCloseReq,
+			},
+			"registers":     br.countRegister,
+			"lastActivity":  br.lastActivity.Format(time.RFC3339),
+			"lastActivityMs": time.Since(br.lastActivity).Milliseconds(),
 		})
 	})
 	mux.HandleFunc("/ws", br.handleWS)
@@ -222,14 +253,23 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 	for {
 		_, data, err := c.ReadMessage()
 		if err != nil {
+			log.Printf("[bridge] read error browser=%s: %v", self, err)
 			return
 		}
 		var env envelope
 		if err := json.Unmarshal(data, &env); err != nil {
+			log.Printf("[bridge] parse error browser=%s: %v", self, err)
 			continue
 		}
 		switch env.Type {
 		case msgTabsUpdate:
+			var d tabsUpdateData
+			_ = json.Unmarshal(env.Data, &d)
+			b.mu.Lock()
+			b.countTabsUpdate++
+			b.touch()
+			b.mu.Unlock()
+			log.Printf("[bridge] <%s tabs-update tabs=%d", self, len(d.Tabs))
 			// Forward to peer so the other browser's UI refreshes.
 			if peer := b.peer(self); peer != nil {
 				_ = write(peer, env)
@@ -237,6 +277,7 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 		case msgOpenURL:
 			var d openURLData
 			if err := json.Unmarshal(env.Data, &d); err != nil {
+				log.Printf("[bridge] open-url parse error browser=%s: %v", self, err)
 				continue
 			}
 			d.Source = self
@@ -245,26 +286,47 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 				recipient = otherBrowser(self)
 			}
 			peer := b.conn(recipient)
+			b.mu.Lock()
+			b.countOpenURL++
+			b.touch()
+			b.mu.Unlock()
+			log.Printf("[bridge] <%s open-url url=%s focus=%v ->%s peer_connected=%v",
+				self, d.URL, d.Focus, recipient, peer != nil)
 			if peer == nil {
 				continue // target not connected: drop (MVP, no pending queue)
 			}
 			out, _ := json.Marshal(d)
 			_ = write(peer, envelope{Type: msgOpenReq, Data: out})
+			b.mu.Lock()
+			b.countOpenReq++
+			b.mu.Unlock()
 			if d.Focus {
+				log.Printf("[bridge] activating window browser=%s", recipient)
 				activateBrowserWindow(recipient)
 			}
 		case msgCloseTab:
 			var d closeTabData
 			if err := json.Unmarshal(env.Data, &d); err != nil {
+				log.Printf("[bridge] close-tab parse error browser=%s: %v", self, err)
 				continue
 			}
 			if d.Target == "" {
 				d.Target = otherBrowser(self)
 			}
+			b.mu.Lock()
+			b.countCloseTab++
+			b.touch()
+			b.mu.Unlock()
+			log.Printf("[bridge] <%s close-tab tabId=%d ->%s", self, d.TabID, d.Target)
 			if peer := b.conn(d.Target); peer != nil {
 				out, _ := json.Marshal(d)
 				_ = write(peer, envelope{Type: msgCloseReq, Data: out})
+				b.mu.Lock()
+				b.countCloseReq++
+				b.mu.Unlock()
 			}
+		default:
+			log.Printf("[bridge] unknown type=%s from=%s", env.Type, self)
 		}
 	}
 }

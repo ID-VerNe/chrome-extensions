@@ -8,3 +8,4 @@ project.md
 package-lock.json
 .glue/
 *.exe
+*.exe~

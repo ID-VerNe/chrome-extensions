@@ -107,3 +107,20 @@ kbd {
   border: 0; background: transparent; color: var(--accent);
   font-size: 11px; cursor: pointer; padding: 2px 4px;
 }
+
+.settings { padding: 8px 12px; border-top: 1px solid var(--line); }
+.set-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0;
+}
+.set-label { font-size: 11px; color: var(--muted); }
+.keybtn {
+  font: 11px/1.2 inherit; padding: 4px 8px; border-radius: 6px;
+  border: 1px solid var(--line); background: var(--row-hover); color: var(--fg);
+  cursor: pointer; min-width: 92px; text-align: center;
+}
+.keybtn.recording {
+  border-color: var(--accent); color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(10, 132, 255, 0.18);
+}
+.set-hint { font-size: 10px; color: var(--muted); margin-top: 4px; min-height: 12px; }

@@ -26,9 +26,21 @@
   <ul id="tabList" class="tablist"></ul>
   <div id="empty" class="empty" hidden>对端没有打开的标签页</div>
 
+  <section class="settings">
+    <div class="set-row">
+      <span class="set-label">后台发送</span>
+      <button class="keybtn" id="bgKeyBtn" title="点击后按下组合键录制">Alt+Shift</button>
+    </div>
+    <div class="set-row">
+      <span class="set-label">前台置顶</span>
+      <button class="keybtn" id="fgKeyBtn" title="点击后按下组合键录制">Alt+Ctrl</button>
+    </div>
+    <div class="set-hint" id="setHint">点击按钮后按下修饰键组合即可录制。</div>
+  </section>
+
   <footer class="ftr">
     <div class="hint">
-      <kbd>Alt+Shift</kbd> 后台发送 · <kbd>Alt+Ctrl</kbd> 前台置顶
+      <kbd id="bgHint">Alt+Shift</kbd> 后台 · <kbd id="fgHint">Alt+Ctrl</kbd> 前台
     </div>
   </footer>
 
