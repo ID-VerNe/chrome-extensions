@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tab Sender 侧边栏</title>
+  <link rel="stylesheet" href="popup.css" />
+  <style>
+    body { width: auto; }
+    .tablist { max-height: none; flex: 1 1 auto; }
+  </style>
+</head>
+<body>
+  <header class="hdr">
+    <div class="status" id="status">
+      <span class="dot" id="dot"></span>
+      <span id="statusText">连接中…</span>
+    </div>
+    <span class="self" id="selfLabel"></span>
+  </header>
+
+  <div class="search">
+    <input id="filter" type="text" placeholder="搜索对端标签页标题或网址…" autocomplete="off" />
+  </div>
+
+  <ul id="tabList" class="tablist"></ul>
+  <div id="empty" class="empty" hidden>对端没有打开的标签页</div>
+
+  <footer class="ftr">
+    <div class="hint">
+      <kbd>Alt+Shift</kbd> 后台发送 · <kbd>Alt+Ctrl</kbd> 前台置顶
+    </div>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
