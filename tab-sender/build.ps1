@@ -2,11 +2,14 @@
 # Usage:  powershell -ExecutionPolicy Bypass -File build.ps1
 [CmdletBinding()]
 param(
-    [string]$OutputPath = "$PSScriptRoot\tab-bridge.exe"
+    [string]$OutputPath
 )
 
 $ErrorActionPreference = "Stop"
-$BridgeDir = Join-Path $PSScriptRoot "bridge"
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path; $PSScriptRoot }
+if (-not $ScriptDir) { $ScriptDir = $PWD.Path }
+if (-not $OutputPath) { $OutputPath = Join-Path $ScriptDir "tab-bridge.exe" }
+$BridgeDir = Join-Path $ScriptDir "bridge"
 
 Write-Host "Building tab-bridge in $BridgeDir ..."
 Push-Location $BridgeDir

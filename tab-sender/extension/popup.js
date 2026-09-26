@@ -89,7 +89,13 @@ function renderTabs(query) {
     const img = document.createElement("img");
     img.className = "fav";
     img.src = t.fav || faviconFor(t.url);
-    img.onerror = () => { img.style.visibility = "hidden"; };
+    img.onerror = () => {
+      if (img.src !== FALLBACK_FAV) {
+        img.src = FALLBACK_FAV;
+      } else {
+        img.style.visibility = "hidden";
+      }
+    };
 
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -111,6 +117,10 @@ function renderTabs(query) {
       L("close-peer-tab id=", t.id, "url=", t.url);
       port && port.postMessage({ type: "popup-close-peer-tab", tabId: t.id });
       li.remove();
+      if (!$list.children.length) {
+        $empty.hidden = false;
+        $empty.textContent = $filter.value.trim() ? "没有匹配的标签页" : "对端没有打开的标签页";
+      }
     });
 
     li.appendChild(img);
@@ -124,11 +134,11 @@ function renderTabs(query) {
   }
 }
 
-// Google's favicon service is a reasonable default; falls back via onerror.
+// Local SVG icon fallback (avoids leaking intranet/internal URLs to external services).
+const FALLBACK_FAV = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23666'%3E%3Cpath d='M8 0a8 8 0 100 16A8 8 0 008 0zm5.9 7H10.1A12.7 12.7 0 009 2.5a6.03 6.03 0 014.9 4.5zM8 2.1c.7 1.3 1.3 3.1 1.5 4.9H6.5C6.7 5.2 7.3 3.4 8 2.1zM2.1 9h3.8c.1 1.8.7 3.6 1.4 4.9A6.03 6.03 0 012.1 9zm3.8-2H2.1A6.03 6.03 0 017 2.5C6.3 3.8 5.8 5.5 5.9 7zm2.2 6.9c-.7-1.3-1.3-3.1-1.5-4.9h3c-.2 1.8-.8 3.6-1.5 4.9zm1-6.9c.1-1.8.7-3.6 1.4-4.9A6.03 6.03 0 0113.9 7h-3.8z'/%3E%3C/svg%3E";
+
 function faviconFor(url) {
-  const h = hostOf(url);
-  if (!h || h === url) return "";
-  return "https://www.google.com/s2/favicons?sz=32&domain=" + encodeURIComponent(h);
+  return FALLBACK_FAV;
 }
 
 // Settings: keybind recording ------------------------------------------------
@@ -161,43 +171,60 @@ function renderSettings() {
   if ($fgHint) $fgHint.textContent = fg;
 }
 
-// Start recording on a button. Captures the next keydown with at least one
-// modifier; non-modifier keys cancel recording (to avoid binding plain keys).
+// Start recording on a button. Accumulates modifiers on keydown and finalizes
+// on keyup (or Escape / blur to cancel).
 function startRecording(btn, keyName) {
   btn.classList.add("recording");
-  $setHint.textContent = "录制中… 按下 " + keyName + " 的修饰键组合（Esc 取消）";
+  $setHint.textContent = "录制中… 按住 " + keyName + " 的修饰键组合，松开完成（Esc 取消）";
 
-  const onKey = (e) => {
+  const activeMods = new Set();
+
+  const onKeyDown = (e) => {
     if (e.key === "Escape") {
       L("recording cancelled");
       cleanup();
       $setHint.textContent = "已取消录制。";
       return;
     }
-    const mods = [];
-    if (e.altKey) mods.push("alt");
-    if (e.ctrlKey) mods.push("ctrl");
-    if (e.shiftKey) mods.push("shift");
-    if (e.metaKey) mods.push("meta");
-    if (!mods.length) {
-      $setHint.textContent = "需要至少一个修饰键（Alt/Ctrl/Shift/Meta）。";
-      return; // keep recording
-    }
     e.preventDefault();
     e.stopPropagation();
-    const combo = normalizeCombo(mods);
-    L("recorded", keyName, "=", combo);
-    $setHint.textContent = "已设置 " + keyName + " = " + prettyCombo(combo);
-    cleanup();
-    saveSettingsToBg(keyName === "bgKey" ? { bgKey: combo } : { fgKey: combo });
+
+    if (e.altKey) activeMods.add("alt");
+    if (e.ctrlKey) activeMods.add("ctrl");
+    if (e.shiftKey) activeMods.add("shift");
+    if (e.metaKey) activeMods.add("meta");
+
+    if (activeMods.size > 0) {
+      const currentCombo = normalizeCombo(Array.from(activeMods));
+      $setHint.textContent = "录制中: " + prettyCombo(currentCombo) + " (松开按键完成，Esc 取消)";
+    } else {
+      $setHint.textContent = "需要至少一个修饰键（Alt/Ctrl/Shift/Meta）。";
+    }
+  };
+
+  const onKeyUp = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (activeMods.size > 0) {
+      const combo = normalizeCombo(Array.from(activeMods));
+      L("recorded", keyName, "=", combo);
+      $setHint.textContent = "已设置 " + keyName + " = " + prettyCombo(combo);
+      cleanup();
+      saveSettingsToBg(keyName === "bgKey" ? { bgKey: combo } : { fgKey: combo });
+    }
   };
 
   function cleanup() {
     btn.classList.remove("recording");
-    window.removeEventListener("keydown", onKey, true);
+    window.removeEventListener("keydown", onKeyDown, true);
+    window.removeEventListener("keyup", onKeyUp, true);
+    window.removeEventListener("blur", cleanup);
   }
-  // capture-phase, so the recording sees the key before the input field does.
-  window.addEventListener("keydown", onKey, true);
+
+  // capture-phase, so the recording sees the key before any inputs do.
+  window.addEventListener("keydown", onKeyDown, true);
+  window.addEventListener("keyup", onKeyUp, true);
+  window.addEventListener("blur", cleanup);
 }
 
 function saveSettingsToBg(patch) {
@@ -211,11 +238,25 @@ function saveSettingsToBg(patch) {
 // Events -------------------------------------------------------------------
 
 $filter.addEventListener("input", () => renderTabs($filter.value.trim()));
-$openSide.addEventListener("click", () => {
-  L("open-sidepanel clicked");
-  chrome.runtime.sendMessage({ type: "open-sidepanel" }, () => void chrome.runtime.lastError);
-  window.close();
-});
+if ($openSide) {
+  $openSide.addEventListener("click", async () => {
+    L("open-sidepanel clicked");
+    try {
+      if (chrome.sidePanel && typeof chrome.sidePanel.open === "function") {
+        const win = await chrome.windows.getCurrent();
+        if (win && win.id) {
+          await chrome.sidePanel.open({ windowId: win.id });
+          window.close();
+          return;
+        }
+      }
+    } catch (e) {
+      L("direct sidePanel.open failed/unsupported:", e.message);
+    }
+    chrome.runtime.sendMessage({ type: "open-sidepanel" }, () => void chrome.runtime.lastError);
+    window.close();
+  });
+}
 if ($bgKeyBtn) $bgKeyBtn.addEventListener("click", () => startRecording($bgKeyBtn, "bgKey"));
 if ($fgKeyBtn) $fgKeyBtn.addEventListener("click", () => startRecording($fgKeyBtn, "fgKey"));
 

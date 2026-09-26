@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"syscall"
 	"unsafe"
 
@@ -22,7 +23,6 @@ const (
 var (
 	user32                      = windows.NewLazySystemDLL("user32.dll")
 	kernel32                    = windows.NewLazySystemDLL("kernel32.dll")
-	psAPI                       = windows.NewLazySystemDLL("psapi.dll")
 	pEnumWindows                = user32.NewProc("EnumWindows")
 	pIsWindowVisible            = user32.NewProc("IsWindowVisible")
 	pGetWindowThreadProcessId   = user32.NewProc("GetWindowThreadProcessId")
@@ -31,12 +31,78 @@ var (
 	pIsIconic                   = user32.NewProc("IsIconic")
 	pGetWindow                  = user32.NewProc("GetWindow")
 	pGetClassNameW             = user32.NewProc("GetClassNameW")
+	pGetWindowTextLengthW       = user32.NewProc("GetWindowTextLengthW")
+	pGetWindowRect              = user32.NewProc("GetWindowRect")
 	pOpenProcess                = kernel32.NewProc("OpenProcess")
 	pCloseHandle                 = kernel32.NewProc("CloseHandle")
 	pQueryFullProcessImageNameW = kernel32.NewProc("QueryFullProcessImageNameW")
-	pGetModuleFileNameExW      = psAPI.NewProc("GetModuleFileNameExW")
 	pkeybd_event                = user32.NewProc("keybd_event")
 )
+
+type rect struct {
+	Left, Top, Right, Bottom int32
+}
+
+var (
+	enumWindowsCallback uintptr
+	enumTarget          string
+	enumFound           uintptr
+	enumMu              sync.Mutex
+)
+
+func init() {
+	enumWindowsCallback = syscall.NewCallback(enumWindowsProc)
+}
+
+func enumWindowsProc(hwnd, _ uintptr) uintptr {
+	if !isWindowVisible(hwnd) {
+		return 1 // continue
+	}
+	if getWindow(hwnd, _GW_OWNER) != 0 {
+		return 1 // skip child/owned windows
+	}
+	if className(hwnd) != "Chrome_WidgetWin_1" {
+		return 1 // Chrome/Edge main window class only
+	}
+	if !isValidBrowserWindow(hwnd) {
+		return 1 // skip utility / background / zero-size widgets
+	}
+	if eqi(processExeName(hwnd), enumTarget) {
+		enumFound = hwnd
+		return 0 // stop enumeration
+	}
+	return 1
+}
+
+func windowTextLength(hwnd uintptr) int {
+	r, _, _ := pGetWindowTextLengthW.Call(hwnd)
+	return int(r)
+}
+
+func windowRect(hwnd uintptr) (width int, height int) {
+	var r rect
+	ret, _, _ := pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&r)))
+	if ret == 0 {
+		return 0, 0
+	}
+	return int(r.Right - r.Left), int(r.Bottom - r.Top)
+}
+
+func isValidBrowserWindow(hwnd uintptr) bool {
+	if windowTextLength(hwnd) <= 0 {
+		return false
+	}
+	// Minimized windows (iconic) have titles and are valid browser windows, but
+	// their Win32 rect is collapsed (e.g. -32000, -32000 with dimensions ~160x24).
+	if isIconic(hwnd) {
+		return true
+	}
+	w, h := windowRect(hwnd)
+	if w <= 200 || h <= 200 {
+		return false
+	}
+	return true
+}
 
 // targetExeFor returns the process image name we look for when activating a
 // given browser ("chrome.exe" or "msedge.exe").
@@ -52,26 +118,14 @@ func targetExeFor(browser string) string {
 // any error is swallowed because focus is a UX enhancement, not correctness.
 func activateBrowserWindow(browser string) {
 	target := targetExeFor(browser)
-	var found uintptr
 
-	cb := syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
-		if !isWindowVisible(hwnd) {
-			return 1 // continue
-		}
-		if getWindow(hwnd, _GW_OWNER) != 0 {
-			return 1 // skip child/owned windows
-		}
-		if className(hwnd) != "Chrome_WidgetWin_1" {
-			return 1 // Chrome/Edge main window class only
-		}
-		if eqi(processExeName(hwnd), target) {
-			found = hwnd
-			return 0 // stop enumeration
-		}
-		return 1
-	})
+	enumMu.Lock()
+	enumTarget = target
+	enumFound = 0
+	_, _, _ = pEnumWindows.Call(enumWindowsCallback, 0)
+	found := enumFound
+	enumMu.Unlock()
 
-	_, _, _ = pEnumWindows.Call(cb, 0)
 	if found == 0 {
 		return
 	}
@@ -116,7 +170,7 @@ func className(hwnd uintptr) string {
 }
 
 // processExeName returns the lowercase exe name owning the window's process.
-// Prefers QueryFullProcessImageNameW (Vista+), falls back to GetModuleFileNameExW.
+// Uses QueryFullProcessImageNameW which works with PROCESS_QUERY_LIMITED_INFORMATION.
 func processExeName(hwnd uintptr) string {
 	var pid uint32
 	_, _, _ = pGetWindowThreadProcessId.Call(hwnd, uintptr(unsafe.Pointer(&pid)))
@@ -130,9 +184,6 @@ func processExeName(hwnd uintptr) string {
 	defer pCloseHandle.Call(h)
 
 	name := queryFullProcessImageName(h)
-	if name == "" {
-		name = getModuleFileNameEx(h)
-	}
 	return baseName(name)
 }
 
@@ -146,17 +197,6 @@ func queryFullProcessImageName(h uintptr) string {
 		return ""
 	}
 	return syscall.UTF16ToString(buf[:size])
-}
-
-func getModuleFileNameEx(h uintptr) string {
-	buf := make([]uint16, _PATH_MAX)
-	n, _, _ := pGetModuleFileNameExW.Call(h, 0,
-		uintptr(unsafe.Pointer(&buf[0])),
-		uintptr(len(buf)))
-	if n == 0 {
-		return ""
-	}
-	return syscall.UTF16ToString(buf[:n])
 }
 
 // baseName returns the last path segment, lowercased.

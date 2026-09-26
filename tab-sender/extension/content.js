@@ -26,19 +26,22 @@
     if (changed) L("settings changed ->", settings);
   });
 
-  // Parse a combo string like "alt+shift" into a predicate on a MouseEvent.
+  // Parse a combo string like "alt+shift" into a strict predicate on a MouseEvent.
+  // Checks that configured modifiers match and unconfigured modifiers are NOT pressed.
   function makeMatcher(combo) {
-    const parts = (combo || "").toLowerCase().split("+").map((p) => p.trim());
+    const parts = new Set((combo || "").toLowerCase().split("+").map((p) => p.trim()).filter(Boolean));
+    if (!parts.size) return () => false;
+    const wantAlt = parts.has("alt");
+    const wantCtrl = parts.has("ctrl") || parts.has("control");
+    const wantShift = parts.has("shift");
+    const wantMeta = parts.has("meta") || parts.has("cmd");
     return (e) => {
-      for (const p of parts) {
-        switch (p) {
-          case "alt": if (!e.altKey) return false; break;
-          case "ctrl": case "control": if (!e.ctrlKey) return false; break;
-          case "shift": if (!e.shiftKey) return false; break;
-          case "meta": case "cmd": if (!e.metaKey) return false; break;
-        }
-      }
-      return true;
+      return (
+        Boolean(e.altKey) === wantAlt &&
+        Boolean(e.ctrlKey) === wantCtrl &&
+        Boolean(e.shiftKey) === wantShift &&
+        Boolean(e.metaKey) === wantMeta
+      );
     };
   }
 
@@ -51,6 +54,31 @@
     return m.join("+") || "(none)";
   }
 
+  // Safely extract href string from HTML or SVG anchor elements.
+  function extractHref(el) {
+    if (!el) return "";
+    let h = el.href;
+    if (typeof h === "object" && h !== null) {
+      // SVGAnimatedString support for SVG <a> tags
+      h = h.baseVal || h.animVal || "";
+    }
+    if (typeof h !== "string" || !h) {
+      h = (typeof el.getAttribute === "function" && (el.getAttribute("href") || el.getAttribute("xlink:href"))) || "";
+    }
+    if (typeof h === "string" && h) {
+      try {
+        const u = new URL(h, document.baseURI);
+        // Exclude pseudo-protocols like javascript: which cannot be opened in tabs
+        if (u.protocol === "javascript:") return "";
+        return u.href;
+      } catch {
+        if (/^\s*javascript:/i.test(h)) return "";
+        return h;
+      }
+    }
+    return "";
+  }
+
   // Evaluate both configured combos against a mouse event.
   function matchCombo(e) {
     const bg = makeMatcher(settings.bgKey)(e);
@@ -58,10 +86,23 @@
     return { bg, fg, any: bg || fg };
   }
 
-  function findAnchor(target) {
-    let el = target;
-    while (el && el.nodeType === Node.ELEMENT_NODE) {
-      if (el.tagName === "A" && el.href) return el;
+  function findAnchor(e) {
+    // Penetrate Shadow DOM boundaries using composedPath()
+    if (e && typeof e.composedPath === "function") {
+      const path = e.composedPath();
+      for (const el of path) {
+        if (el && (el.nodeType === 1 || el.nodeType === (window.Node?.ELEMENT_NODE || 1))) {
+          if ((el.tagName || "").toLowerCase() === "a" && extractHref(el)) {
+            return el;
+          }
+        }
+      }
+    }
+    let el = e && e.target ? e.target : e;
+    while (el && (el.nodeType === 1 || el.nodeType === (window.Node?.ELEMENT_NODE || 1))) {
+      if ((el.tagName || "").toLowerCase() === "a" && extractHref(el)) {
+        return el;
+      }
       el = el.parentElement;
     }
     return null;
@@ -82,13 +123,13 @@
   // so normal drags/selections on non-links are unaffected.
   function suppressDefault(e) {
     if (e.button !== 0) return;
-    const a = findAnchor(e.target);
+    const a = findAnchor(e);
     if (!a) return;
     const { any } = matchCombo(e);
     if (!any) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    L(e.type, "suppressed default mods=", describeMods(e), "href=", a.href);
+    L(e.type, "suppressed default mods=", describeMods(e), "href=", extractHref(a));
   }
 
   document.addEventListener("pointerdown", suppressDefault, true);
@@ -101,7 +142,7 @@
       return;
     }
 
-    const a = findAnchor(e.target);
+    const a = findAnchor(e);
     if (!a) {
       // Not a link click; log at debug only to avoid spam.
       return;
@@ -110,7 +151,8 @@
     const mods = describeMods(e);
     const { bg, fg } = matchCombo(e);
     const focus = fg;
-    L("link click mods=", mods, "href=", a.href, "bgMatch=", bg, "fgMatch=", fg);
+    const url = extractHref(a);
+    L("link click mods=", mods, "href=", url, "bgMatch=", bg, "fgMatch=", fg);
 
     if (!bg && !focus) {
       L("-> no modifier match; letting browser handle. configured bgKey=", settings.bgKey, "fgKey=", settings.fgKey);
@@ -121,7 +163,6 @@
     e.stopImmediatePropagation();
     L("-> preventDefault+stopImmediatePropagation; sending to bg focus=", focus);
 
-    const url = a.href;
     chrome.runtime.sendMessage({ type: "open-url", url, focus }, (resp) => {
       const err = chrome.runtime.lastError;
       if (err) L("sendMessage lastError:", err.message);

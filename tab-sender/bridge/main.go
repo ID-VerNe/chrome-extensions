@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,10 +15,13 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
 )
 
@@ -71,11 +75,31 @@ type closeTabData struct {
 	TabID  int    `json:"tabId"`
 }
 
-// bridge holds registered clients keyed by browser name, plus relay counters
-// surfaced via /health so you can tell at a glance whether messages flow.
+// clientConn wraps websocket.Conn with a mutex to ensure gorilla/websocket's
+// single-writer contract is respected across concurrent goroutines.
+type clientConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (c *clientConn) writeEnvelope(env envelope) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	_ = c.conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	return c.conn.WriteJSON(env)
+}
+
+func (c *clientConn) close() error {
+	return c.conn.Close()
+}
+
+// bridge holds registered clients keyed by browser name, cached tabs, pending
+// open requests, plus relay counters surfaced via /health.
 type bridge struct {
-	mu      sync.RWMutex
-	clients map[string]*websocket.Conn // browser -> conn
+	mu          sync.RWMutex
+	clients     map[string]*clientConn
+	lastTabs    map[string][]tabInfo     // browser -> last known tabs snapshot
+	pendingOpen map[string][]openURLData // target browser -> queued open-url requests
 
 	// relay counters (all under mu)
 	countRegister   map[string]int // per browser, number of (re)connections
@@ -88,15 +112,26 @@ type bridge struct {
 }
 
 var upgrader = websocket.Upgrader{
-	// chrome-extension:// origins are non-standard; accept them all. The bridge
-	// is loopback-only and the extension identity is verified via the register
-	// handshake, so origin checks add no security here.
-	CheckOrigin: func(r *http.Request) bool { return true },
+	// Mitigate CSWSH: only accept browser requests originating from extension
+	// contexts or local non-browser clients (empty Origin), rejecting arbitrary web origins.
+	CheckOrigin: func(r *http.Request) bool {
+		origin := strings.ToLower(r.Header.Get("Origin"))
+		if origin == "" {
+			return true
+		}
+		if strings.HasPrefix(origin, "chrome-extension://") || strings.HasPrefix(origin, "edge-extension://") {
+			return true
+		}
+		log.Printf("[bridge] rejected ws origin: %s", origin)
+		return false
+	},
 }
 
 func newBridge() *bridge {
 	return &bridge{
-		clients:       make(map[string]*websocket.Conn),
+		clients:       make(map[string]*clientConn),
+		lastTabs:      make(map[string][]tabInfo),
+		pendingOpen:   make(map[string][]openURLData),
 		countRegister: make(map[string]int),
 	}
 }
@@ -104,30 +139,32 @@ func newBridge() *bridge {
 func (b *bridge) touch() { b.lastActivity = time.Now() }
 
 // store registers a client under its browser name, replacing any prior conn.
-func (b *bridge) store(name string, c *websocket.Conn) {
+func (b *bridge) store(name string, c *websocket.Conn) *clientConn {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if old, ok := b.clients[name]; ok && old != c {
-		_ = old.Close()
+	if old, ok := b.clients[name]; ok && old.conn != c {
+		_ = old.close()
 	}
-	b.clients[name] = c
+	cc := &clientConn{conn: c}
+	b.clients[name] = cc
 	b.countRegister[name]++
 	b.touch()
 	log.Printf("[bridge] client registered browser=%s total_reg=%d now_connected=%d",
 		name, b.countRegister[name], len(b.clients))
+	return cc
 }
 
 func (b *bridge) drop(name string, c *websocket.Conn) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if cur, ok := b.clients[name]; ok && cur == c {
+	if cur, ok := b.clients[name]; ok && cur.conn == c {
 		delete(b.clients, name)
 		log.Printf("[bridge] client dropped browser=%s now_connected=%d", name, len(b.clients))
 	}
 }
 
-// peer returns the conn for the browser that is NOT the given one.
-func (b *bridge) peer(self string) *websocket.Conn {
+// peer returns the clientConn for the browser that is NOT the given one.
+func (b *bridge) peer(self string) *clientConn {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	for name, c := range b.clients {
@@ -138,16 +175,58 @@ func (b *bridge) peer(self string) *websocket.Conn {
 	return nil
 }
 
-func (b *bridge) conn(name string) *websocket.Conn {
+func (b *bridge) conn(name string) *clientConn {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.clients[name]
 }
 
-// write sends one envelope as JSON over a conn with a write deadline.
-func write(c *websocket.Conn, env envelope) error {
-	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	return c.WriteJSON(env)
+// sendCachedTabs immediately sends the last known tabs snapshot of the peer to client.
+func (b *bridge) sendCachedTabs(peerName string, client *clientConn) {
+	b.mu.RLock()
+	tabs, ok := b.lastTabs[peerName]
+	b.mu.RUnlock()
+	if !ok || len(tabs) == 0 {
+		return
+	}
+	data, err := json.Marshal(tabsUpdateData{Browser: peerName, Tabs: tabs})
+	if err != nil {
+		return
+	}
+	log.Printf("[bridge] sending cached peer tabs (count=%d) from %s to newly connected browser", len(tabs), peerName)
+	_ = client.writeEnvelope(envelope{Type: msgTabsUpdate, Data: data})
+}
+
+// flushPendingOpen sends any open-url requests that arrived while browser was disconnected.
+func (b *bridge) flushPendingOpen(browser string, client *clientConn) {
+	b.mu.Lock()
+	queued := b.pendingOpen[browser]
+	delete(b.pendingOpen, browser)
+	b.mu.Unlock()
+
+	if len(queued) == 0 {
+		return
+	}
+	log.Printf("[bridge] flushing %d queued open-url messages to %s", len(queued), browser)
+	shouldFocus := false
+	for _, d := range queued {
+		out, err := json.Marshal(d)
+		if err != nil {
+			continue
+		}
+		if err := client.writeEnvelope(envelope{Type: msgOpenReq, Data: out}); err == nil {
+			b.mu.Lock()
+			b.countOpenReq++
+			b.mu.Unlock()
+			if d.Focus {
+				shouldFocus = true
+			}
+		}
+	}
+	if shouldFocus {
+		log.Printf("[bridge] activating window for queued focus request browser=%s", browser)
+		activateBrowserWindow(browser)
+	}
 }
 
 func main() {
@@ -173,7 +252,7 @@ func main() {
 		return
 	}
 
-	ln, err := net.Listen("tcp", *addr)
+	ln, err := listenWithReuse(*addr)
 	if err != nil {
 		log.Fatalf("listen %s: %v", *addr, err)
 	}
@@ -241,17 +320,24 @@ func (b *bridge) handleWS(w http.ResponseWriter, r *http.Request) {
 			websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "unknown browser"))
 		return
 	}
-	b.store(rd.Browser, c)
+	client := b.store(rd.Browser, c)
 	defer b.drop(rd.Browser, c)
 	_ = c.SetReadDeadline(time.Time{}) // clear deadline for the long-poll loop
 
-	b.readLoop(rd.Browser, c)
+	// Send cached peer tabs if available so cold-starting dashboard isn't blank
+	peerName := otherBrowser(rd.Browser)
+	b.sendCachedTabs(peerName, client)
+
+	// Flush any pending open-url requests that were queued while this browser was offline
+	b.flushPendingOpen(rd.Browser, client)
+
+	b.readLoop(rd.Browser, client)
 }
 
 // readLoop processes inbound messages from one extension.
-func (b *bridge) readLoop(self string, c *websocket.Conn) {
+func (b *bridge) readLoop(self string, client *clientConn) {
 	for {
-		_, data, err := c.ReadMessage()
+		_, data, err := client.conn.ReadMessage()
 		if err != nil {
 			log.Printf("[bridge] read error browser=%s: %v", self, err)
 			return
@@ -264,15 +350,21 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 		switch env.Type {
 		case msgTabsUpdate:
 			var d tabsUpdateData
-			_ = json.Unmarshal(env.Data, &d)
+			if err := json.Unmarshal(env.Data, &d); err != nil {
+				log.Printf("[bridge] tabs-update parse error browser=%s: %v", self, err)
+				continue
+			}
 			b.mu.Lock()
 			b.countTabsUpdate++
+			if d.Tabs != nil {
+				b.lastTabs[self] = d.Tabs // cache tabs for cold-start retrieval
+			}
 			b.touch()
 			b.mu.Unlock()
 			log.Printf("[bridge] <%s tabs-update tabs=%d", self, len(d.Tabs))
 			// Forward to peer so the other browser's UI refreshes.
 			if peer := b.peer(self); peer != nil {
-				_ = write(peer, env)
+				_ = peer.writeEnvelope(env)
 			}
 		case msgOpenURL:
 			var d openURLData
@@ -285,18 +377,36 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 			if recipient == "" || recipient == self {
 				recipient = otherBrowser(self)
 			}
-			peer := b.conn(recipient)
+
 			b.mu.Lock()
 			b.countOpenURL++
 			b.touch()
-			b.mu.Unlock()
-			log.Printf("[bridge] <%s open-url url=%s focus=%v ->%s peer_connected=%v",
-				self, d.URL, d.Focus, recipient, peer != nil)
+			peer := b.clients[recipient]
 			if peer == nil {
-				continue // target not connected: drop (MVP, no pending queue)
+				// Target not connected: queue it instead of dropping
+				if len(b.pendingOpen[recipient]) < 50 {
+					b.pendingOpen[recipient] = append(b.pendingOpen[recipient], d)
+				}
+				log.Printf("[bridge] <%s open-url url=%s focus=%v ->%s queued (peer offline, pending=%d)",
+					self, d.URL, d.Focus, recipient, len(b.pendingOpen[recipient]))
+				b.mu.Unlock()
+				continue
 			}
+			b.mu.Unlock()
+
+			log.Printf("[bridge] <%s open-url url=%s focus=%v ->%s peer_connected=true",
+				self, d.URL, d.Focus, recipient)
 			out, _ := json.Marshal(d)
-			_ = write(peer, envelope{Type: msgOpenReq, Data: out})
+			if err := peer.writeEnvelope(envelope{Type: msgOpenReq, Data: out}); err != nil {
+				log.Printf("[bridge] write open-url error ->%s: %v; queueing instead", recipient, err)
+				b.mu.Lock()
+				if len(b.pendingOpen[recipient]) < 50 {
+					b.pendingOpen[recipient] = append(b.pendingOpen[recipient], d)
+				}
+				b.mu.Unlock()
+				continue
+			}
+
 			b.mu.Lock()
 			b.countOpenReq++
 			b.mu.Unlock()
@@ -320,10 +430,13 @@ func (b *bridge) readLoop(self string, c *websocket.Conn) {
 			log.Printf("[bridge] <%s close-tab tabId=%d ->%s", self, d.TabID, d.Target)
 			if peer := b.conn(d.Target); peer != nil {
 				out, _ := json.Marshal(d)
-				_ = write(peer, envelope{Type: msgCloseReq, Data: out})
-				b.mu.Lock()
-				b.countCloseReq++
-				b.mu.Unlock()
+				if err := peer.writeEnvelope(envelope{Type: msgCloseReq, Data: out}); err == nil {
+					b.mu.Lock()
+					b.countCloseReq++
+					b.mu.Unlock()
+				} else {
+					log.Printf("[bridge] write close-tab error ->%s: %v", d.Target, err)
+				}
 			}
 		default:
 			log.Printf("[bridge] unknown type=%s from=%s", env.Type, self)
@@ -349,7 +462,7 @@ func installAutostart() error {
 		return err
 	}
 	defer k.Close()
-	return k.SetStringValue(autostartVal, fmt.Sprintf("%q", exe))
+	return k.SetStringValue(autostartVal, fmt.Sprintf("\"%s\"", exe))
 }
 
 func uninstallAutostart() error {
@@ -361,4 +474,22 @@ func uninstallAutostart() error {
 	return k.DeleteValue(autostartVal)
 }
 
+// listenWithReuse creates a TCP listener with SO_REUSEADDR enabled on Windows,
+// allowing rapid server restart without failing on lingering TIME_WAIT sockets.
+func listenWithReuse(addr string) (net.Listener, error) {
+	var lc net.ListenConfig
+	lc.Control = func(network, address string, c syscall.RawConn) error {
+		var err error
+		cErr := c.Control(func(fd uintptr) {
+			err = windows.SetsockoptInt(windows.Handle(fd), windows.SOL_SOCKET, windows.SO_REUSEADDR, 1)
+		})
+		if cErr != nil {
+			return cErr
+		}
+		return err
+	}
+	return lc.Listen(context.Background(), "tcp", addr)
+}
+
 // windows.go holds the Win32 activation implementation (split for readability).
+

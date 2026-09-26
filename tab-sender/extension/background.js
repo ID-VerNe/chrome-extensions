@@ -25,7 +25,7 @@ L("detected self =", SELF);
 let ws = null;
 let connected = false;
 let peerTabs = []; // tabs reported by the other browser
-let port = null; // single shared long-lived port for popup/sidepanel
+const uiPorts = new Set(); // active long-lived ports for popup/sidepanel
 
 // Settings (modifiable from popup). Defaults per the plan.
 const DEFAULT_SETTINGS = {
@@ -230,7 +230,7 @@ async function pushTabs() {
   try {
     const tabs = await chrome.tabs.query({});
     const slim = tabs
-      .filter((t) => !t.url.startsWith("chrome://") && !t.url.startsWith("edge://"))
+      .filter((t) => typeof t.url === "string" && !t.url.startsWith("chrome://") && !t.url.startsWith("edge://"))
       .map((t) => ({
         id: t.id,
         url: t.url,
@@ -290,7 +290,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg && msg.type === "open-sidepanel") {
-    chrome.sidePanel.open({}).then(() => L("sidepanel opened")).catch((e) => LE("sidepanel open:", e.message));
+    chrome.windows.getLastFocused((win) => {
+      if (win && win.id) {
+        chrome.sidePanel.open({ windowId: win.id })
+          .then(() => L("sidepanel opened"))
+          .catch((e) => LE("sidepanel open:", e.message));
+      }
+    });
     sendResponse({ ok: true });
     return true;
   }
@@ -341,30 +347,60 @@ chrome.contextMenus.onClicked.addListener((info) => {
 chrome.commands.onCommand.addListener((cmd) => {
   L("command:", cmd);
   if (cmd === "open-sidepanel") {
-    chrome.sidePanel.open({}).then(() => L("sidepanel opened via command")).catch((e) => LE("sidepanel open:", e.message));
+    chrome.windows.getLastFocused((win) => {
+      if (win && win.id) {
+        chrome.sidePanel.open({ windowId: win.id })
+          .then(() => L("sidepanel opened via command"))
+          .catch((e) => LE("sidepanel open:", e.message));
+      }
+    });
   }
 });
 
 // UI state broadcast to popup/sidepanel -----------------------------------
 
-function broadcastState() {
-  if (!port) { L("broadcastState SKIP (no UI port)"); return; }
+function sendStateToPort(p) {
   try {
-    port.postMessage({ type: "state", connected, self: SELF, peerTabs, settings });
-    L("broadcastState -> UI connected=", connected, "peerTabs=", peerTabs.length, "settings=", settings);
+    p.postMessage({ type: "state", connected, self: SELF, peerTabs, settings });
   } catch (e) {
-    LE("broadcastState postMessage failed:", e.message);
+    LE("sendStateToPort failed:", e.message);
+    uiPorts.delete(p);
+  }
+}
+
+function broadcastState() {
+  if (!uiPorts.size) { L("broadcastState SKIP (no UI ports)"); return; }
+  L("broadcastState -> UI ports count=", uiPorts.size);
+  for (const p of uiPorts) {
+    sendStateToPort(p);
   }
 }
 
 chrome.runtime.onConnect.addListener((p) => {
-  port = p;
-  L("UI port connected name=", p.name);
+  if (p.name !== "ui") return;
+  uiPorts.add(p);
+  L("UI port connected name=", p.name, "active_ports=", uiPorts.size);
+
   p.onMessage.addListener((msg) => {
-    if (msg && msg.type === "get-state") broadcastState();
+    if (!msg) return;
+    if (msg.type === "get-state") {
+      sendStateToPort(p);
+    } else if (msg.type === "popup-open-tab" && typeof msg.url === "string") {
+      L("UI open local tab url=", msg.url);
+      chrome.tabs.create({ url: msg.url, active: true });
+    } else if (msg.type === "popup-close-peer-tab" && typeof msg.tabId === "number") {
+      sendCloseTab(msg.tabId, msg.target || undefined);
+    } else if (msg.type === "save-settings") {
+      saveSettings(msg.settings || {});
+    }
   });
-  p.onDisconnect.addListener(() => { L("UI port disconnected"); port = null; });
-  broadcastState();
+
+  p.onDisconnect.addListener(() => {
+    uiPorts.delete(p);
+    L("UI port disconnected, remaining active ports =", uiPorts.size);
+  });
+
+  sendStateToPort(p);
 });
 
 // Lifecycle: keep alive while connected ------------------------------------
