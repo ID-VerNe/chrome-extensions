@@ -7,18 +7,42 @@
  *
  * The injector creates the DOM element, applies theme-aware styles,
  * and returns the button element for the caller to attach behavior.
+ *
+ * Visual axes (resolved before injection, never `'auto'` here):
+ *   - `iconStyle`    — SVG glyph shape
+ *   - `cornerStyle`  — border-radius bucket (square / soft / pill)
+ *   - `visualStyle`  — material (flat = no shadow/blur, elevated = shadow + blur)
  */
 
 import type { PageColors } from './color'
 import { getButtonColors } from './color'
+import type { IconStyle } from '../shared/settings'
+import type { ResolvedVisual } from './form'
 
 export type InjectionMode = 'toolbar' | 'floating'
+
+/** Radius (px) per resolved corner style, keyed by mode (floating / toolbar). */
+const RADIUS_BY_MODE: Record<ResolvedVisual['cornerStyle'], { floating: number; toolbar: number }> = {
+  square: { floating: 2, toolbar: 2 },
+  soft: { floating: 8, toolbar: 6 },
+  pill: { floating: 22, toolbar: 18 },
+}
+
+/** SVG inner markup per icon style. Outer `<svg>` wrapper is shared. */
+const ICON_PATHS: Record<IconStyle, string> = {
+  'arrow-up': '<path d="M12 20V5"/><path d="M5 12L12 5L19 12"/>',
+  'chevron-up': '<path d="M6 14L12 7L18 14"/>',
+  'circle-arrow': '<circle cx="12" cy="12" r="9"/><path d="M12 16V8"/><path d="M9 11L12 8L15 11"/>',
+  'rounded-arrow': '<rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 16V8"/><path d="M9 11L12 8L15 11"/>',
+}
 
 export interface ButtonConfig {
   mode: InjectionMode
   pageColors: PageColors
   /** Optional parent element for toolbar mode */
   toolbarParent?: HTMLElement
+  iconStyle: IconStyle
+  visual: ResolvedVisual
 }
 
 /**
@@ -88,12 +112,15 @@ function buildButtonElement(config: ButtonConfig): HTMLElement {
   btn.setAttribute('title', '回到顶部')
 
   const { background, icon, hoverBackground } = getButtonColors(config.pageColors)
+  const { cornerStyle, visualStyle } = config.visual
+  const radius = RADIUS_BY_MODE[cornerStyle][config.mode]
+  const isElevated = visualStyle === 'elevated'
+  const shadow = isElevated ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
+  const hoverShadow = isElevated ? '0 4px 16px rgba(0,0,0,0.25)' : 'none'
+  const backdrop = isElevated ? 'blur(4px)' : 'none'
 
   // SVG arrow icon — inline so no external resources needed
-  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${icon}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;display:block">
-    <path d="M12 20V5"/>
-    <path d="M5 12L12 5L19 12"/>
-  </svg>`
+  btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${icon}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width:20px;height:20px;display:block">${ICON_PATHS[config.iconStyle]}</svg>`
 
   if (config.mode === 'toolbar') {
     // Toolbar mode: minimal inline button
@@ -106,20 +133,24 @@ function buildButtonElement(config: ButtonConfig): HTMLElement {
       padding: '6px',
       margin: '4px auto',
       border: 'none',
-      borderRadius: '6px',
+      borderRadius: `${radius}px`,
       background: 'transparent',
+      opacity: '0',
       cursor: 'pointer',
-      transition: 'background 0.2s ease, transform 0.2s ease',
+      boxShadow: 'none',
+      transition: 'opacity 0.3s ease-out, background 0.2s ease-out, transform 0.2s ease-out',
     })
     // Hover: subtle background
     btn.addEventListener('mouseenter', () => {
       btn.style.background = `${background}22` // ~13% opacity
+      btn.style.transform = 'scale(1.05)'
     })
     btn.addEventListener('mouseleave', () => {
       btn.style.background = 'transparent'
+      btn.style.transform = 'scale(1)'
     })
   } else {
-    // Floating mode: semi-transparent floating pill
+    // Floating mode
     Object.assign(btn.style, {
       position: 'fixed',
       bottom: '24px',
@@ -132,25 +163,25 @@ function buildButtonElement(config: ButtonConfig): HTMLElement {
       height: '44px',
       padding: '10px',
       border: 'none',
-      borderRadius: '12px',
+      borderRadius: `${radius}px`,
       background,
       opacity: '0',
       cursor: 'pointer',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-      transition: 'opacity 0.3s ease, transform 0.2s ease, box-shadow 0.2s ease',
-      backdropFilter: 'blur(4px)',
-      WebkitBackdropFilter: 'blur(4px)',
+      boxShadow: shadow,
+      transition: 'opacity 0.3s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out',
+      backdropFilter: backdrop,
+      WebkitBackdropFilter: backdrop,
     })
 
     // Hover state
     btn.addEventListener('mouseenter', () => {
       btn.style.background = hoverBackground
-      btn.style.boxShadow = '0 4px 16px rgba(0,0,0,0.25)'
-      btn.style.transform = 'scale(1.08)'
+      btn.style.boxShadow = hoverShadow
+      btn.style.transform = 'scale(1.05)'
     })
     btn.addEventListener('mouseleave', () => {
       btn.style.background = background
-      btn.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)'
+      btn.style.boxShadow = shadow
       btn.style.transform = 'scale(1)'
     })
   }

@@ -3,7 +3,8 @@
  *
  * Responsibilities:
  *   - Smooth scroll to top on click
- *   - Button fade-in/fade-out based on scroll position
+ *   - Button fade-in/fade-out based on scroll position (pure opacity transition,
+ *     no translate — the injector owns the `transition: opacity` rule)
  *   - Button hover/click animation effects
  */
 
@@ -18,24 +19,17 @@ export function scrollToTop(): void {
 }
 
 /**
- * Remove the unused sbt-float-up keyframe (was for old click behavior).
+ * Inject the press keyframe. Fade is driven by the injector's `transition:
+ * opacity`, so no fade keyframes here. The press is a gentle, overshoot-free
+ * scale-down and back — reads as "press" on both flat and Material-style sites.
  */
 function createButtonClickAnimation(): HTMLStyleElement {
   const style = document.createElement('style')
   style.textContent = `
     @keyframes sbt-press {
       0% { transform: scale(1); }
-      40% { transform: scale(0.85); }
-      70% { transform: scale(1.1); }
+      50% { transform: scale(0.92); }
       100% { transform: scale(1); }
-    }
-    @keyframes sbt-fade-in {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes sbt-fade-out {
-      from { opacity: 1; transform: translateY(0); }
-      to { opacity: 0; transform: translateY(10px); }
     }
   `
   return style
@@ -45,7 +39,7 @@ function createButtonClickAnimation(): HTMLStyleElement {
  * Play the "press" animation when button is clicked.
  */
 function animatePress(btn: HTMLElement): void {
-  btn.style.animation = 'sbt-press 0.4s ease'
+  btn.style.animation = 'sbt-press 0.2s ease-out'
   btn.addEventListener(
     'animationend',
     () => {
@@ -68,11 +62,14 @@ export function setupScrollVisibility(
   button: HTMLElement,
   options?: {
     scrollThreshold?: number
+    /** Opacity (0–1) the button settles at when visible. */
+    visibleOpacity?: number
     onBeforeShow?: () => boolean | Promise<boolean> // return true = native found, abort
     onAbort?: () => void // called when aborted due to native detection
   },
 ): { disconnect: () => void; hideUntilManualScroll: () => void } {
   const threshold = options?.scrollThreshold ?? window.innerHeight * 1.5
+  const visibleOpacity = options?.visibleOpacity ?? 1
 
   // Inject animation keyframes
   document.head.appendChild(createButtonClickAnimation())
@@ -109,7 +106,7 @@ export function setupScrollVisibility(
       // Lock satisfied — clear it
       lockUntilThresholdCycle = false
 
-      // 🔁 Re-check for native button before showing ours
+      // Re-check for native button before showing ours
       if (options?.onBeforeShow) {
         // Guard: skip if a detection is already in-flight
         const result = options.onBeforeShow()
@@ -145,14 +142,13 @@ export function setupScrollVisibility(
   function showButton(): void {
     if (disconnected) return
     visible = true
-    button.classList.add('sbt-visible')
-    button.style.animation = 'sbt-fade-in 0.3s ease forwards'
+    button.style.opacity = String(visibleOpacity)
     button.style.pointerEvents = 'auto'
   }
 
   function hideButton(): void {
     visible = false
-    button.style.animation = 'sbt-fade-out 0.2s ease forwards'
+    button.style.opacity = '0'
     button.style.pointerEvents = 'none'
   }
 
@@ -192,7 +188,6 @@ export function setupScrollVisibility(
       hasBeenAboveThresholdSinceLock = false
       button.style.opacity = '0'
       button.style.pointerEvents = 'none'
-      button.style.animation = 'none'
     },
   }
 }

@@ -246,6 +246,31 @@
 
       <div class="field">
         <div>
+          <div class="field-label">圆角风格</div>
+          <div class="field-desc">自动按页面多数元素推断</div>
+        </div>
+        <select id="cornerStyle">
+          <option value="auto">自动适配</option>
+          <option value="square">方角</option>
+          <option value="soft">柔角</option>
+          <option value="pill">胶囊</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div>
+          <div class="field-label">材质风格</div>
+          <div class="field-desc">自动按页面阴影/毛玻璃推断</div>
+        </div>
+        <select id="visualStyle">
+          <option value="auto">自动适配</option>
+          <option value="flat">扁平（无阴影）</option>
+          <option value="elevated">浮起（阴影+毛玻璃）</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <div>
           <div class="field-label">不透明度</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px">

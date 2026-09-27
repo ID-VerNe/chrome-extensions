@@ -23,11 +23,8 @@
       "run_at": "document_end"
     }
   ],
-  "background": {
-    "service_worker": "src/background/background.ts",
-    "type": "module"
-  },
   "options_page": "src/options/index.html",
-  "permissions": ["storage", "activeTab"],
+  "permissions": ["storage"],
   "host_permissions": ["<all_urls>"]
 }
+

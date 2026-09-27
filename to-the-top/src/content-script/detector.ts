@@ -33,6 +33,8 @@ const SELECTOR_PATTERNS = [
   'a[href="#"]',
   'a[href="#top"]',
   'a[href="#0"]',
+  // compound class (e.g. class="scroll top") — inspired by Maxun's pagination detector
+  '[class*="scroll"][class*="top"]',
   // aria
   '[aria-label*="top" i]',
   '[title*="top" i]',
@@ -326,7 +328,10 @@ export async function detectExistingTopButton(): Promise<DetectionResult> {
     return { hasExistingButton: false, candidate: null }
   }
 
-  // Test top candidates (max 3) with behavior verification
+  // Test top candidates (max 3) with behavior verification.
+  // Only a verified candidate counts as "page already has a button";
+  // otherwise we always inject ours (the extension's core promise is to
+  // provide a button when none provably exists).
   const testBatch = scored.slice(0, 3)
   for (const { el } of testBatch) {
     const verified = await verifyBehavior(el)
@@ -335,12 +340,5 @@ export async function detectExistingTopButton(): Promise<DetectionResult> {
     }
   }
 
-  // Fallback: only treat as existing if there's a high-confidence candidate
-  // (score >= 3 — e.g. floating position + arrow icon)
-  const highConfidence = scored.some((s) => s.score >= 3)
-
-  return {
-    hasExistingButton: highConfidence,
-    candidate: highConfidence ? scored[0].el : null,
-  }
+  return { hasExistingButton: false, candidate: null }
 }

@@ -5,7 +5,11 @@
  * and saves changes on input.
  */
 
-import type { ExtensionSettings } from '../background/background'
+import {
+  loadSettings,
+  saveSettings,
+  type ExtensionSettings,
+} from '../shared/settings'
 
 // --- DOM refs ---
 const $ = <T extends HTMLElement>(id: string): T =>
@@ -15,6 +19,8 @@ const enabledEl = $<HTMLInputElement>('enabled')
 
 const themeModeEl = $<HTMLSelectElement>('themeMode')
 const iconStyleEl = $<HTMLSelectElement>('iconStyle')
+const cornerStyleEl = $<HTMLSelectElement>('cornerStyle')
+const visualStyleEl = $<HTMLSelectElement>('visualStyle')
 const opacityEl = $<HTMLInputElement>('opacity')
 const opacityValueEl = $<HTMLElement>('opacityValue')
 const primaryColorEl = $<HTMLInputElement>('primaryColor')
@@ -29,9 +35,8 @@ let settings: ExtensionSettings | null = null
 let saving = false
 
 // --- Load ---
-async function loadSettings(): Promise<void> {
-  const response = await chrome.runtime.sendMessage({ type: 'GET_SETTINGS' })
-  settings = response as ExtensionSettings
+async function load(): Promise<void> {
+  settings = await loadSettings()
   applySettings(settings)
 }
 
@@ -39,6 +44,8 @@ function applySettings(s: ExtensionSettings): void {
   enabledEl.checked = s.enabled
   themeModeEl.value = s.themeMode
   iconStyleEl.value = s.iconStyle
+  cornerStyleEl.value = s.cornerStyle
+  visualStyleEl.value = s.visualStyle
   opacityEl.value = String(s.opacity)
   opacityValueEl.textContent = `${s.opacity}%`
   primaryColorEl.value = s.primaryColor === 'auto' ? '' : s.primaryColor
@@ -86,12 +93,14 @@ async function save(): Promise<void> {
   settings.enabled = enabledEl.checked
   settings.themeMode = themeModeEl.value as ExtensionSettings['themeMode']
   settings.iconStyle = iconStyleEl.value as ExtensionSettings['iconStyle']
+  settings.cornerStyle = cornerStyleEl.value as ExtensionSettings['cornerStyle']
+  settings.visualStyle = visualStyleEl.value as ExtensionSettings['visualStyle']
   settings.opacity = Number(opacityEl.value)
   settings.primaryColor = primaryColorEl.value.trim() || 'auto'
   settings.injectionMode =
     injectionModeEl.value as ExtensionSettings['injectionMode']
 
-  await chrome.storage.sync.set({ settings })
+  await saveSettings(settings)
   saving = false
 }
 
@@ -99,6 +108,8 @@ async function save(): Promise<void> {
 enabledEl.addEventListener('change', queueSave)
 themeModeEl.addEventListener('change', queueSave)
 iconStyleEl.addEventListener('change', queueSave)
+cornerStyleEl.addEventListener('change', queueSave)
+visualStyleEl.addEventListener('change', queueSave)
 opacityEl.addEventListener('input', () => {
   opacityValueEl.textContent = `${opacityEl.value}%`
 })
@@ -121,4 +132,4 @@ newSiteInputEl.addEventListener('keydown', (e) => {
 })
 
 // --- Boot ---
-loadSettings()
+load()

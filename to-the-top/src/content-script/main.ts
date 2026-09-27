@@ -2,12 +2,13 @@
  * Content Script — Main Entry Point
  *
  * Orchestration flow:
+ *   0. Load settings; bail if disabled or site is blacklisted
  *   1. Detect if page already has a back-to-top button → skip if yes
- *   2. Extract page colors (primary + scheme)
- *   3. Detect right toolbar → inject as toolbar item
- *   4. No toolbar → inject floating button (bottom-right)
+ *   2. Extract page colors (primary + scheme), honoring user overrides
+ *   3. Resolve visual config (corner + material): heuristic → site preset → user override
+ *   4. Detect right toolbar → inject as toolbar item, else floating
  *   5. Attach scroll visibility + click handler
- *   6. Watch for SPA route changes → re-detect
+ *   6. Watch for SPA route changes + storage changes → re-run
  */
 
 import { detectExistingTopButton } from './detector'
@@ -19,53 +20,88 @@ import {
   type ButtonConfig,
   type InjectionMode,
 } from './injector'
-import {
-  setupScrollVisibility,
-  attachClickHandler,
-} from './animator'
+import { setupScrollVisibility, attachClickHandler } from './animator'
+import { getVisualConfig } from './form'
+import { loadSettings, isSiteDisabled } from '../shared/settings'
 
 // Track current state for cleanup / re-injection
 let currentButton: HTMLElement | null = null
 let currentCleanup: (() => void) | null = null
+// Generation token: guards against overlapping init() runs when SPA nav and
+// storage.onChanged fire near-simultaneously.
+let gen = 0
 
 /**
  * Main init: detect → decide → inject.
  */
 async function init(): Promise<void> {
+  // Snapshot the generation; if a newer init() started, this run is stale.
+  const myGen = ++gen
   // Cleanup previous state (for SPA re-runs)
   cleanup()
 
+  // Step 0: Load settings; bail if disabled or site is blacklisted
+  const settings = await loadSettings()
+  if (myGen !== gen) return // stale
+  if (!settings.enabled) return
+  if (isSiteDisabled(location.hostname, settings.disabledSites)) return
+
   // Step 1: Detect existing button
   const existing = await detectExistingTopButton()
+  if (myGen !== gen) return // stale
   if (existing.hasExistingButton) {
     return // Page already has one — do nothing
   }
 
-  // Step 2: Extract page colors
-  const pageColors = getPageColors()
+  // Step 2: Extract page colors (with user overrides)
+  const pageColors = getPageColors(settings)
 
-  // Step 3: Detect toolbar
-  const toolbar = detectRightToolbar()
+  // Step 3: Resolve visual config
+  const visual = getVisualConfig(settings, location.hostname)
 
+  // Step 4: Resolve injection mode
   let mode: InjectionMode
   let toolbarParent: HTMLElement | undefined
 
-  if (toolbar) {
-    mode = 'toolbar'
-    toolbarParent = toolbar
-  } else {
+  if (settings.injectionMode === 'floating') {
     mode = 'floating'
+  } else if (settings.injectionMode === 'toolbar') {
+    mode = 'toolbar'
+    toolbarParent = detectRightToolbar() ?? undefined
+    // User explicitly chose toolbar-only; if there's no toolbar, don't inject.
+    if (!toolbarParent) return
+  } else {
+    // 'auto' — toolbar if available, else floating
+    const toolbar = detectRightToolbar()
+    if (toolbar) {
+      mode = 'toolbar'
+      toolbarParent = toolbar
+    } else {
+      mode = 'floating'
+    }
   }
 
-  // Step 4: Inject button
-  const config: ButtonConfig = { mode, pageColors, toolbarParent }
+  // Step 5: Inject button
+  const config: ButtonConfig = {
+    mode,
+    pageColors,
+    toolbarParent,
+    iconStyle: settings.iconStyle,
+    visual,
+  }
   const button = injectButton(config)
+  if (myGen !== gen) {
+    // A newer init() won mid-flight; clean up our button and bail.
+    removeButton(button)
+    return
+  }
   currentButton = button
 
-  // Step 5: Attach behavior with lazy re-detection
+  // Step 6: Attach behavior with lazy re-detection
   // Re-run detection when the user is about to see our button,
   // to catch lazily-appearing native buttons (e.g. Bilibili, Twitter)
   const visibilityCtrl = setupScrollVisibility(button, {
+    visibleOpacity: settings.opacity / 100,
     onBeforeShow: async () => {
       const recheck = await detectExistingTopButton()
       return recheck.hasExistingButton
@@ -158,9 +194,8 @@ function setupSPAWatcher(): () => void {
   }
 }
 
-// ⚡ Boot
+// Boot
 
-// Run on initial load
 const boot = () => {
   init().then(() => { /* setupSPAWatcher called once at boot */ })
 }
@@ -172,5 +207,12 @@ if (document.readyState === 'loading') {
 }
 
 // SPA watcher — set up ONCE at boot time, not inside init()
-// This avoids stacking multiple history wrappers and MutationObservers.
 setupSPAWatcher()
+
+// React to settings changes from the options page — re-run init() so toggles,
+// blacklist edits, and visual overrides apply to already-open tabs live.
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'sync' && changes.settings) {
+    init()
+  }
+})

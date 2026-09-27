@@ -3,13 +3,19 @@
  *
  * Primary color extraction (priority order):
  *   1. CSS custom properties (--primary, --color-primary, --accent, etc.)
- *   2. First <a> or <button> element's color
- *   3. Fallback to a neutral blue (#1a73e8)
+ *   2. First non-default <a> link color
+ *   3. First <a>/<button> interactive element color
+ *   4. Fallback to a neutral blue (#1a73e8)
  *
  * Light/dark detection (two layers):
  *   1. Check <html>/<body> data-theme / class markers
  *   2. Compute body background brightness
+ *
+ * User overrides via settings: `primaryColor` (hex) and `themeMode` skip the
+ * heuristic entirely.
  */
+
+import type { ExtensionSettings } from '../shared/settings'
 
 export interface PageColors {
   primary: string
@@ -37,21 +43,28 @@ const DARK_CLASS_PATTERNS = ['dark', 'theme-dark', 'dark-mode', 'darkmode']
 const DARK_ATTR_PATTERNS = ['theme', 'data-theme', 'data-mode']
 
 /**
- * Extract primary color from CSS custom properties.
+ * Extract primary color from CSS custom properties. Resolves `var(--x)`
+ * references recursively (including `var(--x, fallback)` syntax), up to a
+ * depth limit to avoid infinite loops on circular references.
  */
 function extractFromCSSVars(): string | null {
   const root = getComputedStyle(document.documentElement)
-  for (const v of PRIMARY_CSS_VARS) {
-    const val = root.getPropertyValue(v).trim()
-    if (val && val !== 'transparent' && val !== 'initial' && val !== 'inherit') {
-      // Expand CSS variables that reference other variables
-      if (val.startsWith('var(')) {
-        const innerVar = val.slice(4, -1).trim()
-        const innerVal = root.getPropertyValue(innerVar).trim()
-        if (innerVal) return innerVal
-      }
-      return val
+  const resolveVar = (name: string, depth: number): string | null => {
+    if (depth > 5) return null
+    const val = root.getPropertyValue(name).trim()
+    if (!val || val === 'transparent' || val === 'initial' || val === 'inherit') {
+      return null
     }
+    if (val.startsWith('var(')) {
+      // `var(--x)` or `var(--x, fallback)` — extract the inner variable name.
+      const inner = val.slice(4, -1).split(',')[0].trim()
+      return resolveVar(inner, depth + 1)
+    }
+    return val
+  }
+  for (const v of PRIMARY_CSS_VARS) {
+    const resolved = resolveVar(v, 0)
+    if (resolved) return resolved
   }
   return null
 }
@@ -69,18 +82,20 @@ function extractFromFirstInteractive(): string | null {
 }
 
 /**
- * Try to extract from a common link color — the first non-default link on the page.
+ * Try to extract from the first non-default link color. Scans up to 5 links
+ * with text content, returns the first non-black/non-white color.
  */
 function extractFromLinkColor(): string | null {
-  const links = document.querySelectorAll('a:not([href="#"])')
+  const links = document.querySelectorAll('a:not([href="#"]):not([href="#top"])')
+  let checked = 0
   for (const link of links) {
+    if (checked >= 5) break
     if (!link.textContent?.trim()) continue
+    checked++
     const color = getComputedStyle(link).color
     if (color && color !== 'rgb(0, 0, 0)' && color !== 'rgb(255, 255, 255)') {
       return color
     }
-    // Only check first few links
-    break
   }
   return null
 }
@@ -177,22 +192,43 @@ function parseHex(hex: string): { r: number; g: number; b: number } {
   }
 }
 
+/** Validate a user-supplied hex color (#rgb or #rrggbb). */
+function isValidHex(value: string): boolean {
+  return /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)
+}
+
 /**
  * Main entry: get page colors (primary accent + scheme).
+ * User overrides (`primaryColor`, `themeMode`) take precedence over heuristics.
  */
-export function getPageColors(): PageColors {
-  // Primary color
-  const primary =
-    extractFromCSSVars() ??
-    extractFromLinkColor() ??
-    extractFromFirstInteractive() ??
-    '#1a73e8' // fallback
+export function getPageColors(
+  settings: Pick<ExtensionSettings, 'themeMode' | 'primaryColor'> = {
+    themeMode: 'auto',
+    primaryColor: 'auto',
+  },
+): PageColors {
+  // Primary color — user override first, else extract from the page.
+  let primary: string
+  if (settings.primaryColor !== 'auto' && isValidHex(settings.primaryColor)) {
+    primary = settings.primaryColor
+  } else {
+    primary =
+      extractFromCSSVars() ??
+      extractFromLinkColor() ??
+      extractFromFirstInteractive() ??
+      '#1a73e8' // fallback
+  }
 
   // Normalize to hex
   const primaryHex = primary.startsWith('#') ? primary : rgbToHex(primary)
 
-  // Color scheme
-  const scheme = detectSchemeFromMarkers() ?? detectSchemeFromBrightness()
+  // Color scheme — user override first, else detect.
+  let scheme: 'light' | 'dark'
+  if (settings.themeMode === 'light' || settings.themeMode === 'dark') {
+    scheme = settings.themeMode
+  } else {
+    scheme = detectSchemeFromMarkers() ?? detectSchemeFromBrightness()
+  }
 
   return { primary: primaryHex, scheme }
 }
