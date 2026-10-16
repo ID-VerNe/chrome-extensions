@@ -64,6 +64,14 @@
 - 关键特性：PSL 域名分组、静音状态持久化与强制同步、批量渲染优化
 - [源码](./muting-tab/) | [安装说明](./muting-tab/README.md)
 
+### 8. Tencent Map to Amap — 腾讯地图转高德地图（用户脚本）
+
+在腾讯地图网页版右下角注入直达按钮，一键在新版高德地图打开相同位置。优先识别并透传当前选中的地物（POI）及其精确经纬度与名称，未选中时自动回退为当前视口中心。
+
+- 技术栈：Tampermonkey / Violentmonkey Userscript, 原生 JS
+- 关键特性：选定地物智能探测、GCJ-02 原生透传零转换、高德新版 SSR 深度适配、无外部依赖
+- [源码](./tencent-to-amap/tencent-to-amap.user.js) | [使用说明](./tencent-to-amap/README.md)
+
 ---
 
 ## 安装方式
